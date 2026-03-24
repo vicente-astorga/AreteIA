@@ -1,0 +1,84 @@
+services:
+  # Nginx Proxy Manager for SSL
+  npm:
+    image: 'jc21/nginx-proxy-manager:latest'
+    container_name: moodle_npm
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '81:81'
+      - '443:443'
+    volumes:
+      - npm_data:/data
+      - npm_letsencrypt:/etc/letsencrypt
+
+  db:
+    image: postgres:13-alpine
+    container_name: moodle_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-moodle}
+      POSTGRES_USER: ${DB_USER:-moodleuser}
+      POSTGRES_PASSWORD: ${DB_PASS:-MoodlePass123!}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-moodleuser} -d ${DB_NAME:-moodle}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:alpine
+    container_name: moodle_redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  moodle:
+    build: .
+    container_name: moodle_app
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - MOODLE_URL=${MOODLE_URL}
+      - DB_TYPE=${DB_TYPE}
+      - DB_HOST=${DB_HOST}
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASS=${DB_PASS}
+      - DB_PORT=${DB_PORT}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - moodledata:/var/www/moodledata
+      - ./src:/var/www/html
+      - ./conf/moodle.ini:/usr/local/etc/php/conf.d/moodle.ini
+
+  nginx:
+    image: nginx:alpine
+    container_name: moodle_web
+    restart: unless-stopped
+    # Port 8080 remains for local testing if NPM is not used/configured yet
+    ports:
+      - "8080:80"
+    volumes:
+      - ./src:/var/www/html
+      - ./conf/nginx.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - moodle
+
+volumes:
+  db_data:
+  redis_data:
+  moodledata:
+  npm_data:
+  npm_letsencrypt:
