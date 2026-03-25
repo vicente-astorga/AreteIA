@@ -1,3 +1,5 @@
+name: areteia
+
 services:
   # Nginx Proxy Manager for SSL
   npm:
