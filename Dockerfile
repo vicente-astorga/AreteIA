@@ -66,6 +66,15 @@ RUN mkdir -p /var/www/moodledata && \
     chown -R www-data:www-data /var/www/moodledata && \
     chmod -R 777 /var/www/moodledata
 
+# Install Moodle Core
+ARG MOODLE_VERSION
+RUN git clone --depth 1 --branch ${MOODLE_VERSION} https://github.com/moodle/moodle.git /var/www/html && \
+    chown -R www-data:www-data /var/www/html
+
 WORKDIR /var/www/html
+
+COPY entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
 CMD ["php-fpm"]
