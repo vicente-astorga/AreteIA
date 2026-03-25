@@ -19,13 +19,14 @@ services:
     container_name: moodle_db
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${DB_NAME:-moodle}
-      POSTGRES_USER: ${DB_USER:-moodleuser}
-      POSTGRES_PASSWORD: ${DB_PASS:-MoodlePass123!}
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASS}
+
     volumes:
       - db_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-moodleuser} -d ${DB_NAME:-moodle}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -55,6 +56,7 @@ services:
       - DB_USER=${DB_USER}
       - DB_PASS=${DB_PASS}
       - DB_PORT=${DB_PORT}
+
     depends_on:
       db:
         condition: service_healthy
