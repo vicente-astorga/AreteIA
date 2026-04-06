@@ -1,3 +1,12 @@
 fastapi
 uvicorn
 python-multipart
+faiss-cpu
+sentence-transformers
+pypdf
+python-docx
+pydantic
+python-docx
+python-pptx
+PyPDF2
+langchain==0.0.202

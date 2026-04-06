@@ -1,48 +1,109 @@
 from fastapi import FastAPI, Request
 import logging
-
 import os
+
+from rag.pipeline import run_ingestion
+from rag.store import get_index_path, get_metadata_path
+from rag.search import search_index, search_course
 
 app = FastAPI(title="AreteIA AI Service")
 logging.basicConfig(level=logging.INFO)
+
 
 @app.get("/")
 async def root():
     return {"message": "AreteIA AI Service is running"}
 
+
 @app.post("/sync")
 async def sync_course(request: Request):
+    data = await request.json()
+    course = data.get("course", {})
+    files = data.get("files", [])
+    verified = []
+    for f in files:
+        path = f.get("localpath")
+        if path and os.path.exists(path):
+            verified.append(f.get("filename"))
+    return {"status": "success", "files_verified": len(verified)}
+
+# @app.post("/ingest")
+# async def ingest_course(request: Request):
+#     data = await request.json()
+#     course_id = data.get("course_id")
+#     if not course_id:
+#         return {"status": "error", "message": "Missing course_id"}
+#     if os.path.exists(get_index_path(course_id)):
+#         return {"status": "exists", "message": f"Embeddings already exist for course {course_id}"}
+#     return run_ingestion(course_id)
+
+# @app.post("/ingest")
+# async def ingest_course(request: Request):
+#     data = await request.json()
+#     course_id = data.get("course_id")
+#     if not course_id:
+#         return {"status": "error", "message": "Missing course_id"}
+#     # 🔥 delete existing embeddings 2
+#     index_path = get_index_path(course_id)
+#     metadata_path = get_metadata_path(course_id)
+#     if os.path.exists(index_path):
+#         os.remove(index_path)
+#     if os.path.exists(metadata_path):
+#         os.remove(metadata_path)
+
+#     return run_ingestion(course_id)
+
+@app.post("/ingest")
+async def ingest_course(request: Request):
+    """
+    Trigger ingestion for a course folder (chunking + embeddings).
+    Expects JSON: {"course_id": 2, "folder_path": "/var/www/moodledata/areteia_sync"}
+    """
+    data = await request.json()
+    course_id = data.get("course_id")
+    if not course_id:
+        return {"status": "error", "message": "course_id is required"}
+
     try:
-        body = await request.body()
-        logging.info(f"Raw body received: {body.decode('utf-8')[:500]}...")
-        
-        data = await request.json()
-        course_name = data.get("course", {}).get("fullname", "Unknown")
-        files = data.get("files", [])
-        
-        verified_files = []
-        for f in files:
-            localpath = f.get("localpath")
-            if localpath and os.path.exists(localpath):
-                size = os.path.getsize(localpath)
-                verified_files.append(f"{f.get('filename')} ({size} bytes)")
-            else:
-                logging.warning(f"File not found on disk: {localpath}")
-        
-        logging.info(f"Received sync for course: {course_name}")
-        logging.info(f"Verified {len(verified_files)} files physically on disk")
-        
+        n_chunks = run_ingestion(course_id)
         return {
             "status": "success",
-            "message": f"Data for '{course_name}' received. {len(verified_files)} files ready for RAG.",
-            "info": {
-                "files_found": verified_files
-            }
+            "message": f"Ingested course {course_id} into {n_chunks} chunks"
         }
     except Exception as e:
-        logging.error(f"Error processing sync: {str(e)}")
+        logging.exception("Error ingesting course")
         return {"status": "error", "message": str(e)}
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+# @app.post("/search")
+# async def search(request: Request):
+#     data = await request.json()
+#     course_id = data.get("course_id")
+#     query = data.get("query")
+#     if not course_id or not query:
+#         return {"status": "error", "message": "Missing course_id or query"}
+#     results = search_index(course_id, query)
+#     return {"status": "success", "results": results}
+
+@app.post("/search")
+async def search_endpoint(request: Request):
+    """
+    Query a course embedding for RAG.
+    Expects JSON: {"course_id": 2, "query": "text to search"}
+    """
+    data = await request.json()
+    course_id = data.get("course_id")
+    query = data.get("query")
+    if not course_id or not query:
+        return {"status": "error", "message": "course_id and query required"}
+
+    try:
+        results = search_course(course_id, query)
+        return {"status": "success", "results": results}
+    except Exception as e:
+        logging.exception("Error searching course")
+        return {"status": "error", "message": str(e)}
+    
+@app.get("/status/{course_id}")
+def check_status(course_id: int):
+    exists = os.path.exists(get_index_path(course_id))
+    return {"course_id": course_id, "embedding_exists": exists}

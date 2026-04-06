@@ -66,7 +66,9 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - moodledata:/var/www/moodledata
+      # - moodledata:/var/www/moodledata
+      - ./moodledata:/var/www/moodledata
+      # - ./areteia_sync:/var/www/moodledata/areteia_sync:ro
       - moodle_core:/var/www/html
       - ./local/areteia:/var/www/html/local/areteia
       - ./conf/moodle.ini:/usr/local/etc/php/conf.d/moodle.ini
@@ -90,14 +92,18 @@ services:
     restart: unless-stopped
     ports:
       - "8000:8000"
+    # environment:
+      # - ARETEIA_SYNC_PATH=/var/www/moodledata/areteia_sync
+    env_file: .env
     volumes:
       - ./areteia_ai:/app
-      - moodledata:/var/www/moodledata:ro
+      # - moodledata:/var/www/moodledata:ro
+      - ./moodledata:/var/www/moodledata
 
 volumes:
   db_data:
   redis_data:
-  moodledata:
+  # moodledata:
   npm_data:
   npm_letsencrypt:
   moodle_core:

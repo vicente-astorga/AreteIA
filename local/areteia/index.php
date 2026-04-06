@@ -39,6 +39,8 @@ try {
     echo html_writer::start_tag('div', ['class' => 'areteia-actions mb-4']);
     $syncurl = new moodle_url($PAGE->url, ['action' => 'sync']);
     echo html_writer::link($syncurl, 'Consumir Data (Sincronizar con Python/IA)', ['class' => 'btn btn-primary']);
+    $ingesturl = new moodle_url($PAGE->url, ['action' => 'ingest']);
+    echo html_writer::link($ingesturl, 'Construir Embeddings', ['class' => 'btn btn-secondary ml-2']);
     echo html_writer::end_tag('div');
 
     if (optional_param('action', '', PARAM_ALPHA) === 'sync') {
@@ -79,7 +81,39 @@ try {
             }
         }
     }
+    if (optional_param('action', '', PARAM_ALPHA) === 'ingest') {
+        echo $OUTPUT->notification('Construyendo embeddings del curso...', 'info');
 
+        // IMPORTANT: we assume files are already synced to disk
+        $files_for_ai = \local_areteia\data_provider::get_course_files($id, false);
+
+        $payload = json_encode([
+            'course_id' => $id
+        ]);
+
+        $curl = new \curl(['ignoresecurity' => true]);
+        $curl->setHeader('Content-Type: application/json');
+
+        $options = [
+            'CURLOPT_TIMEOUT' => 60,
+            'CURLOPT_CONNECTTIMEOUT' => 10,
+        ];
+
+        $response = $curl->post('http://python_rag:8000/ingest', $payload, $options);
+
+        if ($curl->get_errno()) {
+            echo $OUTPUT->notification('Error conectando con Python: ' . $curl->error, 'error');
+        } else {
+            $res = json_decode($response);
+
+            if (isset($res->status) && $res->status === 'success') {
+                echo $OUTPUT->notification('Embeddings creados correctamente: ' . $res->message, 'success');
+            } else {
+                echo $OUTPUT->notification('Error en la creación de embeddings', 'error');
+                echo html_writer::tag('pre', s($response));
+            }
+        }
+    }
     echo html_writer::start_tag('div', ['class' => 'areteia-summary card p-3 mb-4']);
     echo html_writer::tag('p', '<strong>Summary:</strong> ' . ($summary['summary'] ?: 'No summary available'));
     echo html_writer::tag('p', '<strong>Files detected:</strong> ' . count($files));
