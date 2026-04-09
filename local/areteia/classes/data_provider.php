@@ -151,7 +151,7 @@ class data_provider {
                                 try {
                                     $file->copy_content_to($localpath);
                                 } catch (\Exception $e) {
-                                    // Log or skip if fail
+                                    file_put_contents($CFG->dataroot . '/areteia_sync/debug.txt', "Error copying " . $file->get_filename() . ": " . $e->getMessage() . "\n", FILE_APPEND);
                                 }
                             }
                             $reldata['localpath'] = $localpath;
@@ -163,5 +163,58 @@ class data_provider {
         }
         
         return $res;
+    }
+    /**
+     * Create a new Moodle Assign activity programmatically
+     * 
+     * @param int $courseid
+     * @param string $name
+     * @param string $description
+     * @return object The created course module info
+     */
+    public static function create_assign_activity($courseid, $name, $description) {
+        global $CFG, $DB;
+        require_once($CFG->dirroot . '/course/lib.php');
+        
+        $course = $DB->get_record('course', ['id' => $courseid], '*', MUST_EXIST);
+        $module = $DB->get_record('modules', ['name' => 'assign'], '*', MUST_EXIST);
+        
+        // Find or create a valid section
+        $modinfo = get_fast_modinfo($course);
+        $sections = $modinfo->get_section_info_all();
+        $sectionid = 0;
+        foreach ($sections as $s) {
+            if ($s->section > 0) {
+                $sectionid = $s->id;
+                $sectionnum = $s->section;
+                break;
+            }
+        }
+        
+        // 1. Create assignment instance
+        $assign = new \stdClass();
+        $assign->course = $courseid;
+        $assign->name = $name;
+        $assign->intro = $description;
+        $assign->introformat = FORMAT_MARKDOWN;
+        $assign->grade = 100;
+        $assign->timemodified = time();
+        $assign->id = $DB->insert_record('assign', $assign);
+        
+        // 2. Add course module
+        $cm = new \stdClass();
+        $cm->course = $courseid;
+        $cm->module = $module->id;
+        $cm->instance = $assign->id;
+        $cm->section = $sectionid;
+        $cm->id = add_course_module($cm);
+        
+        // 3. Add cm to section
+        course_add_cm_to_section($courseid, $cm->id, $sectionnum);
+        
+        // 4. Rebuild cache
+        rebuild_course_cache($courseid, true);
+        
+        return (object)['coursemodule' => $cm->id];
     }
 }

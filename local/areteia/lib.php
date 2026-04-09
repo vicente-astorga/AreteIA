@@ -18,13 +18,14 @@ function local_areteia_extend_navigation_course(navigation_node $navigation, $co
     if (has_capability('moodle/course:update', $context)) {
         $url = new moodle_url('/local/areteia/index.php', ['id' => $course->id]);
         $node = navigation_node::create(
-            get_string('pluginname', 'local_areteia'),
+            'AretéIA',
             $url,
-            navigation_node::TYPE_SETTING,
+            navigation_node::TYPE_CUSTOM,
             null,
             'local_areteia',
-            new pix_icon('i/info', '')
+            new pix_icon('i/menu', '')
         );
+        $node->set_show_in_secondary_navigation(true);
         $navigation->add_node($node);
     }
 }

@@ -4,8 +4,15 @@ from pptx import Presentation
 from sentence_transformers import SentenceTransformer
 import numpy as np
 
-# Load once globally
-MODEL = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+# Lazy load model
+_MODEL = None
+
+def get_model():
+    global _MODEL
+    if _MODEL is None:
+        from sentence_transformers import SentenceTransformer
+        _MODEL = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+    return _MODEL
 
 def extract_pdf(path):
     text = ""
@@ -40,4 +47,4 @@ def extract_pptx(path):
     return text
 
 def embed_text_chunks(chunks):
-    return np.array(MODEL.encode(chunks, convert_to_numpy=True))
+    return np.array(get_model().encode(chunks, convert_to_numpy=True))

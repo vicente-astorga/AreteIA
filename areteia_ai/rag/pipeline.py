@@ -42,6 +42,9 @@ def run_ingestion(course_id: int,  chunk_size=500, overlap=50):
                 "text": chunk
             })
 
+    if not all_chunks:
+        return 0
+
     embeddings = embed_text_chunks(all_chunks)
     save_index(course_id, embeddings, metadata)
     return len(all_chunks)
