@@ -18,7 +18,7 @@ function local_areteia_extend_navigation_course(navigation_node $navigation, $co
     if (has_capability('moodle/course:update', $context)) {
         $url = new moodle_url('/local/areteia/index.php', ['id' => $course->id]);
         $node = navigation_node::create(
-            'AretéIA',
+            'AreteIA',
             $url,
             navigation_node::TYPE_CUSTOM,
             null,

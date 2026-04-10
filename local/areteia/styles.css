@@ -1,4 +1,4 @@
-/* AretéIA Plugin Styles */
+/* AreteIA Plugin Styles */
 
 /* Extend the beige background by targeting Moodle Boost's main region naturally */
 body.path-local-areteia #region-main-box {
@@ -253,6 +253,13 @@ body#page-local-areteia-index #region-main {
     border-color: #185fa5;
     background: #e6f1fb;
     color: #185fa5;
+}
+
+.s0-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 14px;
 }
 
 /* Responsive */

@@ -1,0 +1,248 @@
+<?php
+namespace local_areteia\steps;
+
+defined('MOODLE_INTERNAL') || die();
+
+use html_writer;
+use moodle_url;
+use local_areteia\session_manager;
+use local_areteia\lock_manager;
+use local_areteia\rag_client;
+use local_areteia\step_renderer;
+
+/**
+ * Step 1 — Contexto objetivo.
+ * Shows imported course data and manages RAG embedding build.
+ */
+class step1 {
+
+    public static function render(array $ctx): void {
+        global $PAGE, $OUTPUT;
+
+        $id        = $ctx['id'];
+        $summary   = $ctx['summary'];
+        $files     = $ctx['files'];
+        $use_moodle = session_manager::get('use_moodle', 1);
+
+        echo html_writer::tag('span', 'Paso 1 — Contexto objetivo', ['class' => 'areteia-tag t-ia']);
+        echo html_writer::tag('p', 'Contexto pedagógico de la asignatura', ['class' => 'areteia-stitle']);
+        echo html_writer::tag('p',
+            'Verificá la información importada de Moodle para asegurar que el RAG tenga el contexto correcto.',
+            ['class' => 'areteia-sdesc']
+        );
+
+        // Lock banner: protect downstream progress
+        $is_locked = lock_manager::is_locked(1);
+        if ($is_locked) {
+            lock_manager::render_lock_banner(
+                '🔒 Opción bloqueada',
+                'La edición está protegida porque ya avanzaste.',
+                new moodle_url($PAGE->url, ['step' => 0, 'unlock' => 2]),
+                '🔓 Desbloquear (Se borrará el progreso posterior)'
+            );
+        }
+
+        // Check embedding status from Python service
+        $status_result    = rag_client::status($id);
+        $status_data      = $status_result['data'];
+        $status_raw       = $status_result['raw'];
+        $already_ingested = ($status_data && !empty($status_data->embedding_exists));
+        $service_down     = ($status_raw === false || empty($status_raw));
+
+        if ($use_moodle) {
+            self::render_moodle_fields($summary, $files, $already_ingested, $service_down, $status_data);
+        } else {
+            echo $OUTPUT->notification('Carga manual no implementada en este prototipo.', 'warning');
+        }
+
+        // Bottom section depends on ingestion state
+        $ingested = optional_param('ingested', 0, PARAM_INT);
+        self::render_ingestion_status($id, $ingested, $already_ingested, $service_down);
+    }
+
+    // ------------------------------------------------------------------
+    // Private helpers
+    // ------------------------------------------------------------------
+
+    private static function render_moodle_fields(
+        array $summary,
+        array $files,
+        bool $already_ingested,
+        bool $service_down,
+        ?object $status_data
+    ): void {
+        global $PAGE;
+
+        echo html_writer::start_tag('div', ['class' => 'areteia-fields']);
+
+        // --- Field: Asignatura ---
+        echo html_writer::start_tag('div', ['class' => 'areteia-fr']);
+        echo html_writer::start_tag('div', ['class' => 'areteia-flbl']);
+        echo 'Asignatura ' . html_writer::tag('span', 'Moodle', ['class' => 'areteia-origin']);
+        echo html_writer::tag('span', 'Confirmado', ['class' => 'sb-tag sb-ok']);
+        echo html_writer::end_tag('div');
+        echo html_writer::tag('div', $summary['fullname'], ['class' => 'areteia-fb fc']);
+        echo html_writer::end_tag('div');
+
+        // --- Field: Programa / Resumen ---
+        $sum_ok = optional_param('sum_ok', 0, PARAM_INT);
+        echo html_writer::start_tag('div', ['class' => 'areteia-fr']);
+        echo html_writer::start_tag('div', ['class' => 'areteia-flbl']);
+        echo 'Programa / Resumen ' . html_writer::tag('span', 'Moodle', ['class' => 'areteia-origin']);
+        $res_tag = (!empty($summary['summary']) || $sum_ok)
+            ? ['sb-tag sb-ok', 'Confirmado']
+            : ['sb-tag sb-warn', 'Verificar'];
+        echo html_writer::tag('span', $res_tag[1], ['class' => $res_tag[0]]);
+        echo html_writer::end_tag('div');
+        echo html_writer::tag('div', $summary['summary'] ?: 'Sin resumen en Moodle', ['class' => 'areteia-fb fw']);
+        echo html_writer::start_tag('div', ['class' => 'areteia-fa']);
+        $conf_url = new moodle_url($PAGE->url, ['step' => 1, 'sum_ok' => 1]);
+        echo html_writer::link($conf_url, 'Confirmar', ['class' => 'fb-btn ok', 'style' => 'text-decoration:none']);
+        echo html_writer::tag('button', 'Editar', [
+            'class'   => 'fb-btn',
+            'onclick' => "alert('Edición de resumen próximamente en el prototipo.')",
+        ]);
+        echo html_writer::end_tag('div');
+        echo html_writer::end_tag('div');
+
+        // --- Field: Materiales ---
+        echo html_writer::start_tag('div', ['class' => 'areteia-fr']);
+        echo html_writer::start_tag('div', ['class' => 'areteia-flbl']);
+        echo 'Materiales detectados ' . html_writer::tag('span', 'Moodle', ['class' => 'areteia-origin']);
+        if ($already_ingested) {
+            $chunks = $status_data->chunks ?? 0;
+            echo html_writer::tag('span', "Verificado ($chunks fragmentos)", ['class' => 'sb-tag sb-ok']);
+        } else if ($service_down) {
+            echo html_writer::tag('span', 'Servicio no disponible', [
+                'class' => 'sb-tag sb-warn',
+                'style' => 'background:#ff9800',
+            ]);
+        } else {
+            echo html_writer::tag('span', 'Verificar', ['class' => 'sb-tag sb-warn']);
+        }
+        echo html_writer::end_tag('div');
+
+        echo html_writer::start_tag('div', ['class' => 'areteia-fb fw']);
+        if ($already_ingested) {
+            echo html_writer::tag('div', 'Embeddings detectados y persistentes.', [
+                'class' => 'areteia-fb fw',
+                'style' => 'color:#28a745; font-weight:bold;',
+            ]);
+            if (!empty($status_data->path)) {
+                echo html_writer::tag('small', 'Ruta: ' . s($status_data->path), [
+                    'style' => 'display:block; color:#999; font-size:10px; margin-top:4px;',
+                ]);
+            }
+        } else if ($service_down) {
+            echo html_writer::tag('div',
+                'El servicio de IA aún no ha arrancado (posible reinicio de PC). Reintentando...',
+                ['class' => 'areteia-fb fw', 'style' => 'color:#ff9800;']
+            );
+        } else {
+            echo html_writer::tag('div',
+                'Se han detectado ' . count($files) . ' archivos listos para RAG.',
+                ['class' => 'areteia-fb fw']
+            );
+        }
+
+        // File list
+        if (count($files) > 0) {
+            echo '<ul style="list-style:none; padding:0; font-size:12px; margin-top:10px; color:#555;">';
+            foreach (array_slice($files, 0, 10) as $f) {
+                echo '<li style="margin-bottom:4px; display:flex; align-items:center;">';
+                echo '<span style="color:#28a745; margin-right:8px;">📄</span>';
+                echo '<div>' . s($f['filename']) . ' <br><small style="color:#999;">' . s($f['module'] ?? '') . '</small></div>';
+                echo '</li>';
+            }
+            if (count($files) > 10) {
+                echo '<li style="color:#999; margin-left:22px;">... y ' . (count($files) - 10) . ' más.</li>';
+            }
+            echo '</ul>';
+        }
+
+        echo html_writer::end_tag('div'); // areteia-fb
+        echo html_writer::end_tag('div'); // areteia-fr
+        echo html_writer::end_tag('div'); // areteia-fields
+    }
+
+    private static function render_ingestion_status(
+        int $id,
+        int $ingested,
+        bool $already_ingested,
+        bool $service_down
+    ): void {
+        global $PAGE;
+
+        $prev_url = new moodle_url($PAGE->url, ['step' => 0]);
+
+        if ($already_ingested || $ingested == 1) {
+            // Success
+            echo html_writer::start_tag('div', [
+                'class' => 'areteia-card',
+                'style' => 'border-left: 5px solid #28a745; background: #f4fff4; margin-bottom:20px;',
+            ]);
+            echo html_writer::tag('strong', '✨ ¡Embeddings construidos con éxito!', [
+                'style' => 'color:#28a745; display:block; margin-bottom:5px;',
+            ]);
+            echo html_writer::tag('p',
+                'La IA ya tiene acceso a los contenidos de tu curso para darte mejores respuestas.',
+                ['style' => 'font-size:12px; margin:0;']
+            );
+            echo html_writer::end_tag('div');
+
+            step_renderer::render_nav(1, $prev_url, new moodle_url($PAGE->url, ['step' => 2]), 'Continuar al paso 2 →');
+
+        } else if ($ingested == 2) {
+            // Empty content
+            echo html_writer::start_tag('div', [
+                'class' => 'areteia-card',
+                'style' => 'border-left: 5px solid #ffca28; background: #fffcf0; margin-bottom:20px;',
+            ]);
+            echo html_writer::tag('strong', '⚠️ Sin texto extraíble', [
+                'style' => 'color:#ffca28; display:block; margin-bottom:5px;',
+            ]);
+            echo html_writer::tag('p',
+                'Moodle entregó los archivos, pero la IA no encontró texto (quizás sean PDFs escaneados o carpetas vacías). Esto limitará las sugerencias de RAG.',
+                ['style' => 'font-size:12px; line-height:1.4; margin:0;']
+            );
+            echo html_writer::end_tag('div');
+
+            step_renderer::render_nav(1, $prev_url, new moodle_url($PAGE->url, ['step' => 2]), 'Continuar al paso 2 →');
+
+        } else if ($ingested == -1) {
+            // Error
+            echo html_writer::start_tag('div', [
+                'class' => 'areteia-card',
+                'style' => 'border-left: 5px solid #dc3545; background: #fff4f4; margin-bottom:20px;',
+            ]);
+            echo html_writer::tag('strong', '❌ Error de conexión', [
+                'style' => 'color:#dc3545; display:block; margin-bottom:5px;',
+            ]);
+            echo html_writer::tag('p',
+                'Hubo un fallo al intentar conectarse al servicio Python. Verifica los logs de docker.',
+                ['style' => 'font-size:12px; margin:0;']
+            );
+            echo html_writer::end_tag('div');
+
+            $retry_url = new moodle_url($PAGE->url, ['id' => $id, 'action' => 'ingest']);
+            step_renderer::render_nav(1, $prev_url, $retry_url, 'Reintentar Construcción');
+
+        } else if ($service_down) {
+            // Service not ready
+            echo html_writer::start_tag('div', ['class' => 'areteia-nav']);
+            echo html_writer::link($prev_url, '← Volver', ['class' => 'areteia-btn']);
+            echo html_writer::tag('span', 'Paso 1 de 7', ['class' => 'areteia-ncnt']);
+            echo html_writer::tag('span', 'Esperando al servicio de IA...', [
+                'class' => 'areteia-btn disabled',
+                'style' => 'opacity:0.7; cursor:wait;',
+            ]);
+            echo '<script>setTimeout(() => location.reload(), 3000);</script>';
+            echo html_writer::end_tag('div');
+
+        } else {
+            // Ready to build
+            $ing_url = new moodle_url($PAGE->url, ['step' => 1, 'action' => 'ingest']);
+            step_renderer::render_nav(1, $prev_url, $ing_url, 'Confirmar y Construir Embeddings');
+        }
+    }
+}
