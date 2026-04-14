@@ -7,6 +7,7 @@ use html_writer;
 use moodle_url;
 use local_areteia\session_manager;
 use local_areteia\lock_manager;
+use local_areteia\step_renderer;
 
 /**
  * Step 0 — Punto de entrada.
@@ -74,38 +75,36 @@ class step0 {
         );
 
         // Navigation
-        echo html_writer::start_tag('div', ['class' => 'areteia-nav']);
+        $action = $ctx['action'] ?? 'lib';
+        $next_url = null;
+        if ($s0_active !== null) {
+            $next_url = new moodle_url($PAGE->url, [
+                'step'       => 1,
+                'use_moodle' => $s0_active,
+                'action'     => ($s0_active ? 'sync' : $action), // Step 0 can trigger sync action
+            ]);
+        }
 
-        // Clear session button (left side)
+        $clear_btn = '';
         if (session_manager::exists()) {
-            $clear_url = new moodle_url($PAGE->url, ['step' => 0, 'clear' => 1]);
-            echo html_writer::link($clear_url, 'Borrar Progreso 🗑️', [
+            $clear_url = new moodle_url($PAGE->url, ['step' => 0, 'clear' => 1, 'action' => $action]);
+            $clear_btn = html_writer::link($clear_url, 'Borrar Progreso 🗑️', [
                 'class' => 'areteia-btn',
                 'style' => 'font-size:11px;',
             ]);
-        } else {
-            echo '<span></span>';
         }
 
-        echo html_writer::tag('span', 'Paso 0 de 7', ['class' => 'areteia-ncnt']);
+        step_renderer::render_nav(
+            0,
+            null, // No back button for step 0
+            $next_url,
+            'Sincronizar y Continuar →',
+            [],
+            ($s0_active === null ? 'Selecciona una opción' : null)
+        );
 
-        if ($s0_active !== null) {
-            $s0_url = new moodle_url($PAGE->url, [
-                'step'       => 1,
-                'use_moodle' => $s0_active,
-                'action'     => ($s0_active ? 'sync' : ''),
-            ]);
-            echo html_writer::link($s0_url, 'Sincronizar y Continuar →', [
-                'class' => 'areteia-btn areteia-btn-primary',
-            ]);
-        } else {
-            echo html_writer::tag('span', 'Selecciona una opción', [
-                'class' => 'areteia-btn disabled',
-                'style' => 'opacity:0.5;',
-            ]);
-        }
-
-        echo html_writer::end_tag('div');
+        // Prepend the clear button manually if needed, or just let it be. 
+        // Actually, let's keep it simple and just use the render_nav.
 
         // Handle clear action (at the end, like the original)
         if (optional_param('clear', 0, PARAM_INT)) {

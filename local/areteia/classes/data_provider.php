@@ -7,6 +7,9 @@ defined('MOODLE_INTERNAL') || die();
  * Class to extract course data for AreteIA
  */
 class data_provider {
+ 
+    /** Allowed file extensions for RAG processing */
+    private const ALLOWED_EXTS = ['pdf', 'ppt', 'pptx', 'docx', 'doc'];
 
     /**
      * Get a summary of the course content
@@ -69,6 +72,7 @@ class data_provider {
         
         $base_sync_dir = '';
         if ($extract_to_sync_dir) {
+            self::delete_sync_dir($courseid);
             $base_sync_dir = $CFG->dataroot . '/areteia_sync/course_' . $courseid;
             if (!file_exists($base_sync_dir)) {
                 mkdir($base_sync_dir, 0777, true);
@@ -80,6 +84,11 @@ class data_provider {
         $course_files = $fs->get_area_files($course_context->id, 'course', 'section');
         foreach ($course_files as $file) {
             if (!$file->is_directory()) {
+                $ext = strtolower(pathinfo($file->get_filename(), PATHINFO_EXTENSION));
+                if (!in_array($ext, self::ALLOWED_EXTS)) {
+                    continue;
+                }
+                
                 $section_folder = $base_sync_dir . '/0_General';
                 $reldata = [
                     'filename' => $file->get_filename(),
@@ -128,6 +137,11 @@ class data_provider {
                         // Avoid system/temp files
                         if ($file->get_component() == 'user' || $file->get_filearea() == 'draft') continue;
 
+                        $ext = strtolower(pathinfo($file->get_filename(), PATHINFO_EXTENSION));
+                        if (!in_array($ext, self::ALLOWED_EXTS)) {
+                            continue;
+                        }
+
                         $activity_name = clean_param($cm->name, PARAM_FILE);
                         $activity_folder_name = $cm->id . '_' . ($activity_name ?: 'Activity');
                         
@@ -146,7 +160,9 @@ class data_provider {
                                 mkdir($target_dir, 0777, true);
                             }
                             $localpath = $target_dir . '/' . $file->get_filename();
-                            if (file_exists($localpath)) $localpath = $target_dir . '/' . $file->get_contenthash() . '_' . $file->get_filename();
+                            if (file_exists($localpath)) {
+                                $localpath = $target_dir . '/' . $file->get_contenthash() . '_' . $file->get_filename();
+                            }
                             if (!file_exists($localpath)) {
                                 try {
                                     $file->copy_content_to($localpath);
@@ -164,6 +180,126 @@ class data_provider {
         
         return $res;
     }
+
+    /**
+     * Get a hierarchical tree of course materials (Course > Sections > Activities > Files).
+     *
+     * @param int $courseid
+     * @return array
+     */
+    public static function get_course_materials_tree(int $courseid): array {
+        global $DB;
+        $fs = get_file_storage();
+        $course = $DB->get_record('course', ['id' => $courseid], '*', MUST_EXIST);
+        $modinfo = get_fast_modinfo($course);
+
+        $tree = [
+            'id'       => $courseid,
+            'name'     => $course->fullname,
+            'type'     => 'course',
+            'sections' => []
+        ];
+
+        // 1. Files in the course context itself (Intro / General files)
+        $course_context = \context_course::instance($courseid);
+        $course_files = $fs->get_area_files($course_context->id, 'course', 'section');
+        $general_files = [];
+        foreach ($course_files as $file) {
+            if ($file->is_directory()) continue;
+            $ext = strtolower(pathinfo($file->get_filename(), PATHINFO_EXTENSION));
+            if (!in_array($ext, self::ALLOWED_EXTS)) continue;
+
+            $general_files[] = [
+                'id'       => $file->get_id(),
+                'name'     => $file->get_filename(),
+                'type'     => 'file',
+                'relpath'  => '0_General/' . $file->get_filename()
+            ];
+        }
+
+        if (!empty($general_files)) {
+            $tree['sections'][] = [
+                'id'         => 0,
+                'name'       => 'Materiales generales del curso',
+                'type'       => 'section',
+                'activities' => [
+                    [
+                        'id'    => 'gen',
+                        'name'  => 'Archivos intro',
+                        'type'  => 'activity',
+                        'files' => $general_files
+                    ]
+                ]
+            ];
+        }
+
+        // 2. Traverse sections and activities
+        foreach ($modinfo->get_section_info_all() as $section) {
+            if (!$section->uservisible) continue;
+            if (empty($modinfo->sections[$section->section])) continue;
+
+            $section_name = get_section_name($course, $section);
+            $section_node = [
+                'id'         => $section->id,
+                'name'       => $section_name ?: "Sección {$section->section}",
+                'type'       => 'section',
+                'activities' => []
+            ];
+
+            foreach ($modinfo->sections[$section->section] as $cmid) {
+                $cm = $modinfo->get_cm($cmid);
+                if (!$cm->uservisible) continue;
+
+                $activity_node = [
+                    'id'    => $cm->id,
+                    'name'  => $cm->name,
+                    'type'  => 'activity',
+                    'files' => []
+                ];
+
+                // Use DB to get all files in this module's context, regardless of filearea
+                try {
+                    $mod_context = \context_module::instance($cm->id);
+                    $filerecords = $DB->get_records('files', ['contextid' => $mod_context->id]);
+                    
+                    foreach ($filerecords as $r) {
+                        try {
+                            $file = $fs->get_file_instance($r);
+                        } catch (\Exception $e) {
+                            continue;
+                        }
+
+                        if ($file->is_directory()) continue;
+                        if ($file->get_component() === 'user' || $file->get_filearea() === 'draft') continue;
+
+                        $ext = strtolower(pathinfo($file->get_filename(), PATHINFO_EXTENSION));
+                        if (!in_array($ext, self::ALLOWED_EXTS)) continue;
+
+                        $activity_node['files'][] = [
+                            'id'      => $file->get_id(),
+                            'name'    => $file->get_filename(),
+                            'type'    => 'file',
+                            'relpath' => $section->section . '_' . clean_param($section_name, PARAM_FILE) . '/' .
+                                         $cm->id . '_' . clean_param($cm->name, PARAM_FILE) . '/' . $file->get_filename()
+                        ];
+                    }
+                } catch (\Exception $e) {
+                    continue; // Skip activities with context errors
+                }
+
+                if (!empty($activity_node['files'])) {
+                    $section_node['activities'][] = $activity_node;
+                }
+            }
+
+            if (!empty($section_node['activities'])) {
+                $tree['sections'][] = $section_node;
+            }
+        }
+
+        return $tree;
+    }
+
     /**
      * Create a new Moodle Assign activity programmatically
      * 
@@ -216,5 +352,36 @@ class data_provider {
         rebuild_course_cache($courseid, true);
         
         return (object)['coursemodule' => $cm->id];
+    }
+
+    /**
+     * Recursively delete the sync directory for a course.
+     *
+     * @param int $courseid
+     */
+    public static function delete_sync_dir($courseid) {
+        global $CFG;
+        $base_sync_dir = $CFG->dataroot . '/areteia_sync/course_' . $courseid;
+        if (file_exists($base_sync_dir)) {
+            self::rrmdir($base_sync_dir);
+        }
+    }
+
+    /**
+     * Internal recursive directory removal helper.
+     */
+    private static function rrmdir($dir) {
+        if (!is_dir($dir)) return;
+        $items = scandir($dir);
+        foreach ($items as $item) {
+            if ($item == '.' || $item == '..') continue;
+            $path = $dir . DIRECTORY_SEPARATOR . $item;
+            if (is_dir($path)) {
+                self::rrmdir($path);
+            } else {
+                unlink($path);
+            }
+        }
+        rmdir($dir);
     }
 }

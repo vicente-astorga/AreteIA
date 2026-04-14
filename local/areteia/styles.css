@@ -26,6 +26,58 @@ body#page-local-areteia-index #region-main {
     margin-bottom: 22px;
 }
 
+/* Tab Navigation */
+.areteia-tabs {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 25px;
+}
+
+.areteia-tab {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 16px 10px;
+    background: #fff;
+    border: 1px solid #d3d1c7;
+    border-radius: 12px;
+    text-decoration: none;
+    color: #555;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+}
+
+.areteia-tab:hover {
+    border-color: #185fa5;
+    background: #f8faff;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(24, 95, 165, 0.08);
+}
+
+.areteia-tab.active {
+    background: #185fa5;
+    color: #fff;
+    border-color: #185fa5;
+    box-shadow: 0 4px 12px rgba(24, 95, 165, 0.2);
+}
+
+.areteia-tab .tab-icon {
+    font-size: 20px;
+    margin-bottom: 6px;
+}
+
+.areteia-tab .tab-label {
+    font-size: 13px;
+    font-weight: 600;
+    text-align: center;
+}
+
+.areteia-tab.active .tab-label {
+    color: #fff;
+}
+
 /* Progress Bar */
 .areteia-progress {
     display: flex;
@@ -204,6 +256,107 @@ body#page-local-areteia-index #region-main {
 .sb-ok   { background: #d4edda; color: #1e7850; }
 .sb-warn { background: #faeeda; color: #854f0b; }
 
+/* --- Hierarchical Tree (Step 1) --- */
+.areteia-tree {
+    background: rgba(255, 255, 255, 0.5);
+    border: 1px solid #e0e0e0;
+    border-radius: 12px;
+    padding: 15px;
+    margin-top: 10px;
+    font-size: 13px;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+
+.tree-row {
+    display: flex;
+    align-items: center;
+    padding: 6px 10px;
+    border-radius: 8px;
+    margin-bottom: 2px;
+}
+
+.tree-row:hover {
+    background: rgba(24, 95, 165, 0.05);
+}
+
+.tree-label-text {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    flex-grow: 1;
+    margin: 0;
+}
+
+.tree-toggle, .tree-toggle-spacer {
+    display: inline-block;
+    width: 20px;
+    text-align: center;
+    font-size: 10px;
+    color: #888;
+    margin-right: 5px;
+}
+
+.tree-toggle {
+    cursor: pointer;
+    transition: transform 0.2s ease;
+}
+
+.tree-toggle:hover {
+    color: #333;
+}
+
+.tree-node.collapsed > .tree-row .tree-toggle {
+    transform: rotate(-90deg);
+}
+
+.tree-children {
+    display: block;
+    margin-left: 26px; /* Indent the nested children */
+    border-left: 1px dotted #ccc;
+    padding-left: 5px;
+}
+
+.tree-node.collapsed > .tree-children {
+    display: none;
+}
+
+.tree-icon {
+    margin-right: 10px;
+    font-size: 1.2em;
+    filter: grayscale(0.5);
+}
+
+.tree-name {
+    color: #444;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Custom Checkbox */
+.tree-cb {
+    width: 18px;
+    height: 18px;
+    margin-right: 12px;
+    cursor: pointer;
+    accent-color: #185fa5;
+    border: 2px solid #ddd;
+    border-radius: 4px;
+}
+
+.tree-course .tree-name { font-weight: 700; color: #185fa5; }
+.tree-section .tree-name { font-weight: 600; color: #333; }
+.tree-activity .tree-name { color: #555; }
+.tree-file .tree-name { color: #666; font-style: italic; }
+
+/* Scrollbar styling */
+.areteia-tree::-webkit-scrollbar { width: 6px; }
+.areteia-tree::-webkit-scrollbar-track { background: transparent; }
+.areteia-tree::-webkit-scrollbar-thumb { background: #ddd; border-radius: 10px; }
+.areteia-tree::-webkit-scrollbar-thumb:hover { background: #ccc; }
+
 .areteia-fa { display: flex; gap: 8px; margin-top: 10px; }
 .fb-btn { font-size: 11px; padding: 4px 12px; border-radius: 20px; border: 1px solid #d3d1c7; background: #fff; color: #555; cursor: pointer; }
 .fb-btn:hover { opacity: .7; }
@@ -298,6 +451,47 @@ body#page-local-areteia-index #region-main {
     padding: 8px 12px;
     text-align: left;
 }
-.areteia-markdown-content th {
-    background: #f4f7f9;
+/* Real-time Progress Bar */
+.areteia-progress-container {
+    margin-top: 15px;
+}
+.areteia-progress-bar-wrap {
+    width: 100%;
+    height: 12px;
+    background: #e9ecef;
+    border-radius: 6px;
+    overflow: hidden;
+    position: relative;
+    border: 1px solid #dee2e6;
+}
+.areteia-progress-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #185fa5, #4ca1af);
+    width: 0%;
+    transition: width 0.4s cubic-bezier(0.1, 0.7, 0.6, 0.9);
+    position: relative;
+}
+.areteia-progress-bar-fill::after {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; bottom: 0; right: 0;
+    background-image: linear-gradient(-45deg, rgba(255, 255, 255, .2) 25%, transparent 25%, transparent 50%, rgba(255, 255, 255, .2) 50%, rgba(255, 255, 255, .2) 75%, transparent 75%, transparent);
+    background-size: 40px 40px;
+    animation: move-stripes 2s linear infinite;
+}
+@keyframes move-stripes {
+    from { background-position: 0 0; }
+    to { background-position: 40px 0; }
+}
+.areteia-progress-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 8px;
+    font-size: 11px;
+    color: #666;
+    font-weight: 500;
+}
+.areteia-progress-status {
+    color: #1a1a18;
 }

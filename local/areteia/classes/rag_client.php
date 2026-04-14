@@ -39,6 +39,20 @@ class rag_client {
         $response = self::post('/ingest', json_encode(['course_id' => $course_id]), 600, 30);
         return @json_decode($response);
     }
+    
+    /**
+     * DELETE /ingest/{id} — delete existing embeddings for a course.
+     *
+     * @param int $course_id
+     */
+    public static function delete(int $course_id): void {
+        $ch = curl_init(self::BASE . '/ingest/' . $course_id);
+        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "DELETE");
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+        curl_exec($ch);
+        curl_close($ch);
+    }
 
     /**
      * GET /status/{course_id} — check embedding existence.
@@ -47,11 +61,15 @@ class rag_client {
      * @return array  ['data' => ?object, 'raw' => string|false]
      */
     public static function status(int $course_id): array {
-        $curl = new \curl(['ignoresecurity' => true]);
-        $raw  = $curl->get(self::BASE . '/status/' . $course_id);
+        $ch = curl_init(self::BASE . '/status/' . $course_id);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+        $raw = curl_exec($ch);
+        curl_close($ch);
+        
         return [
             'data' => @json_decode($raw),
-            'raw'  => $raw,
+            'raw'  => $raw ?: false,
         ];
     }
 
@@ -98,12 +116,27 @@ class rag_client {
         int $timeout = 60,
         int $connect_timeout = 20
     ): string {
-        $curl = new \curl(['ignoresecurity' => true]);
-        $curl->setHeader('Content-Type: application/json');
-        $curl->setopt([
-            'CURLOPT_TIMEOUT'        => $timeout,
-            'CURLOPT_CONNECTTIMEOUT' => $connect_timeout,
+        $ch = curl_init(self::BASE . $endpoint);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            'Content-Type: application/json',
+            'Content-Length: ' . strlen($payload)
         ]);
-        return $curl->post(self::BASE . $endpoint, $payload);
+        curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, $connect_timeout);
+        
+        $response = curl_exec($ch);
+        $error = curl_error($ch);
+        curl_close($ch);
+        
+        if ($response === false) {
+            // Log native curl error for debugging
+            error_log("AreteIA RAG CURL Error ($endpoint): " . $error);
+            return '';
+        }
+        
+        return $response;
     }
 }

@@ -7,6 +7,7 @@ use html_writer;
 use moodle_url;
 use local_areteia\session_manager;
 use local_areteia\rag_client;
+use local_areteia\step_renderer;
 
 /**
  * Step 6 — Instrumento de calificación.
@@ -69,35 +70,23 @@ class step6 {
             $formatted = format_text($rubric_content, FORMAT_MARKDOWN, ['context' => $context]);
             echo html_writer::tag('div', $formatted, ['class' => 'areteia-markdown-content']);
 
-            // Inner nav
-            echo html_writer::start_tag('div', [
-                'class' => 'areteia-nav',
-                'style' => 'margin-top:20px; border-top:1px solid #eee; padding-top:15px;',
-            ]);
-            echo html_writer::link(
-                new moodle_url($PAGE->url, array_merge($link_params, ['step' => 5])),
-                '← Volver',
-                ['class' => 'areteia-btn']
-            );
+            // Bottom navigation handled by step_renderer (calculates prev/next URLs based on action sequence)
+            step_renderer::render_nav(6);
 
-            // Regenerate button
+            // Regenerate button (placed separately or inside if we customize render_nav)
             $regen_url = new moodle_url($PAGE->url, array_merge($link_params, [
                 'step'           => 6,
                 'do_gen'         => 1,
                 'rubric_content' => ' ',
             ]));
+            echo html_writer::start_tag('div', ['style' => 'text-align:right; margin-top:10px;']);
             echo html_writer::link($regen_url, 'Regenerar ✨', [
                 'class' => 'areteia-btn',
-                'style' => 'margin-left:auto; margin-right:10px;',
+                'style' => 'font-size:11px; color:#185fa5;',
             ]);
+            echo html_writer::end_tag('div');
 
-            echo html_writer::link(
-                new moodle_url($PAGE->url, array_merge($link_params, ['step' => 7])),
-                'Finalizar y Revisar →',
-                ['class' => 'areteia-btn areteia-btn-primary']
-            );
-            echo html_writer::end_tag('div');
-            echo html_writer::end_tag('div');
+            echo html_writer::end_tag('div'); // card
         }
     }
 }

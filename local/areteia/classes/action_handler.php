@@ -36,6 +36,10 @@ class action_handler {
                 self::handle_export($course_id, $base_url, $is_ajax);
                 return true;
 
+            case 'delete_rag':
+                self::handle_delete_rag($course_id, $base_url, $is_ajax);
+                return true;
+
             default:
                 return false;
         }
@@ -61,7 +65,8 @@ class action_handler {
         // POST /sync
         rag_client::sync($summary);
 
-        $redir = new \moodle_url($base_url, ['step' => 1, 'use_moodle' => 1]);
+        // Always return to the Library tab (Step 1)
+        $redir = new \moodle_url($base_url, ['step' => 1, 'use_moodle' => 1, 'action' => 'lib']);
         if ($is_ajax) {
             $redir->param('ajax', 1);
         }
@@ -72,21 +77,69 @@ class action_handler {
      * Trigger embedding ingestion and redirect to Step 1 with result status.
      */
     private static function handle_ingest(int $course_id, \moodle_url $base_url, bool $is_ajax): void {
+        global $CFG;
         \core_php_time_limit::raise(600);
+
+        // 1. Force a clean physical extraction of ALL allowed course files to disk first,
+        // because the user might have arrived here cleanly via tabs without hitting sync.
+        data_provider::get_course_files($course_id, true);
+
+        // 2. Filter files if a selection was made
+        $selected_files_raw = optional_param('selected_files', '', PARAM_RAW);
+        if (!empty($selected_files_raw)) {
+            $selected_files = json_decode($selected_files_raw, true);
+            if (is_array($selected_files)) {
+                $base_sync_dir = $CFG->dataroot . '/areteia_sync/course_' . $course_id;
+                if (file_exists($base_sync_dir)) {
+                    $directory = new \RecursiveDirectoryIterator($base_sync_dir);
+                    $iterator = new \RecursiveIteratorIterator($directory);
+                    
+                    foreach ($iterator as $file) {
+                        if ($file->isDir()) continue;
+                        
+                        // Get path relative to course_XX folder
+                        $relative_path = substr($file->getPathname(), strlen($base_sync_dir) + 1);
+                        
+                        // If not in selected list, delete it
+                        if (!in_array($relative_path, $selected_files)) {
+                            @unlink($file->getPathname());
+                        }
+                    }
+                }
+            }
+        }
 
         $res_data = rag_client::ingest($course_id);
 
-        // Determine ingestion state: 1=success, 2=empty, -1=error
+        // Determine ingestion state: 1=success, 2=empty, 3=processing, -1=error
         if ($res_data && $res_data->status == 'success') {
             $state = ($res_data->chunks > 0) ? 1 : 2;
+        } else if ($res_data && $res_data->status == 'started') {
+            $state = 3;
         } else {
             $state = -1;
         }
-        if ($res_data && $res_data->chunks == 0) {
+        if ($res_data && isset($res_data->chunks) && $res_data->chunks === 0) {
             $state = 2;
         }
 
-        $redir = new \moodle_url($base_url, ['step' => 1, 'use_moodle' => 1, 'ingested' => $state]);
+        // Always return to the Library tab (Step 1)
+        // Set deleted=1 param so UI can potentially show a small flash message (optional)
+        $redir = new \moodle_url($base_url, ['step' => 1, 'use_moodle' => 1, 'ingested' => $state, 'deleted' => 1, 'action' => 'lib']);
+        if ($is_ajax) {
+            $redir->param('ajax', 1);
+        }
+        redirect($redir);
+    }
+
+    /**
+     * Delete the existing RAG embedding for a course.
+     */
+    private static function handle_delete_rag(int $course_id, \moodle_url $base_url, bool $is_ajax): void {
+        rag_client::delete($course_id);
+        data_provider::delete_sync_dir($course_id);
+        
+        $redir = new \moodle_url($base_url, ['step' => 0, 'action' => 'lib']);
         if ($is_ajax) {
             $redir->param('ajax', 1);
         }
@@ -114,10 +167,12 @@ class action_handler {
 
         $moduleinfo = data_provider::create_assign_activity($course_id, $inst_name, $final_desc);
 
+        $action = optional_param('action', 'lib', PARAM_ALPHA);
         $redir = new \moodle_url($base_url, [
             'step'     => 7,
             'exported' => 1,
             'cmid'     => $moduleinfo->coursemodule,
+            'action'   => $action,
         ]);
         if ($is_ajax) {
             $redir->param('ajax', 1);

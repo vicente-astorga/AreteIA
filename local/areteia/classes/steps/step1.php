@@ -19,7 +19,7 @@ class step1 {
     public static function render(array $ctx): void {
         global $PAGE, $OUTPUT;
 
-        $id        = $ctx['id'];
+        $id        = $ctx['id'] ?: optional_param('id', 0, PARAM_INT);
         $summary   = $ctx['summary'];
         $files     = $ctx['files'];
         $use_moodle = session_manager::get('use_moodle', 1);
@@ -50,7 +50,7 @@ class step1 {
         $service_down     = ($status_raw === false || empty($status_raw));
 
         if ($use_moodle) {
-            self::render_moodle_fields($summary, $files, $already_ingested, $service_down, $status_data);
+            self::render_moodle_fields($id, $summary, $files, $already_ingested, $service_down, $status_data);
         } else {
             echo $OUTPUT->notification('Carga manual no implementada en este prototipo.', 'warning');
         }
@@ -65,6 +65,7 @@ class step1 {
     // ------------------------------------------------------------------
 
     private static function render_moodle_fields(
+        int $id,
         array $summary,
         array $files,
         bool $already_ingested,
@@ -139,30 +140,100 @@ class step1 {
                 ['class' => 'areteia-fb fw', 'style' => 'color:#ff9800;']
             );
         } else {
-            echo html_writer::tag('div',
-                'Se han detectado ' . count($files) . ' archivos listos para RAG.',
-                ['class' => 'areteia-fb fw']
-            );
-        }
-
-        // File list
-        if (count($files) > 0) {
-            echo '<ul style="list-style:none; padding:0; font-size:12px; margin-top:10px; color:#555;">';
-            foreach (array_slice($files, 0, 10) as $f) {
-                echo '<li style="margin-bottom:4px; display:flex; align-items:center;">';
-                echo '<span style="color:#28a745; margin-right:8px;">📄</span>';
-                echo '<div>' . s($f['filename']) . ' <br><small style="color:#999;">' . s($f['module'] ?? '') . '</small></div>';
-                echo '</li>';
-            }
-            if (count($files) > 10) {
-                echo '<li style="color:#999; margin-left:22px;">... y ' . (count($files) - 10) . ' más.</li>';
-            }
-            echo '</ul>';
+            $tree = \local_areteia\data_provider::get_course_materials_tree($id);
+            echo html_writer::start_tag('div', [
+                'class' => 'areteia-fb fw', 
+                'style' => 'margin-bottom:15px; display: flex; justify-content: space-between; align-items: center;'
+            ]);
+            echo html_writer::tag('span', "Seleccioná los materiales para la IA:", ['style' => 'font-weight:bold;']);
+            echo html_writer::tag('span', 'Calculando...', [
+                'id' => 'selection-count-badge', 
+                'class' => 'sb-tag sb-warn',
+                'style' => 'margin-left:10px; padding: 4px 10px; border-radius: 12px; font-size: 11px;'
+            ]);
+            echo html_writer::end_tag('div');
+            self::render_materials_tree($tree);
         }
 
         echo html_writer::end_tag('div'); // areteia-fb
         echo html_writer::end_tag('div'); // areteia-fr
         echo html_writer::end_tag('div'); // areteia-fields
+    }
+
+    /**
+     * Recursively render the hierarchical materials tree.
+     */
+    private static function render_materials_tree(array $tree): void {
+        echo html_writer::start_tag('div', ['class' => 'areteia-tree', 'id' => 'materials-tree']);
+        self::render_tree_node($tree, 0);
+        echo html_writer::end_tag('div');
+    }
+
+    /**
+     * Helper to render a single tree node and its children.
+     */
+    private static function render_tree_node(array $node): void {
+        $type = $node['type'];
+        $id   = $node['id'];
+        $name = $node['name'];
+        $uid  = "tree-{$type}-{$id}";
+        
+        $has_children = !empty($node['sections']) || !empty($node['activities']) || !empty($node['files']);
+
+        // Icons based on type
+        $icons = [
+            'course'   => '🎓',
+            'section'  => '📁',
+            'activity' => '🧩',
+            'file'     => '📄'
+        ];
+        $icon = $icons[$type] ?? '•';
+
+        echo html_writer::start_tag('div', ['class' => "tree-node tree-{$type}"]);
+
+        echo html_writer::start_tag('div', ['class' => 'tree-row']);
+        
+        // Toggle chevron (only if there are children)
+        if ($has_children) {
+            echo html_writer::tag('span', '▼', ['class' => 'tree-toggle', 'title' => 'Colapsar/Expandir']);
+        } else {
+            echo html_writer::tag('span', '', ['class' => 'tree-toggle-spacer']);
+        }
+
+        $checked = 'checked'; // Default to checked
+        $attr = [
+            'type'           => 'checkbox',
+            'class'          => 'tree-cb',
+            'id'             => $uid,
+            'data-type'      => $type,
+            'data-id'        => $id,
+            'value'          => ($type === 'file' ? ($node['relpath'] ?? '') : $id)
+        ];
+        if ($checked) $attr['checked'] = 'checked';
+
+        echo html_writer::empty_tag('input', $attr);
+        echo html_writer::start_tag('label', ['for' => $uid, 'class' => 'tree-label-text']);
+        echo html_writer::tag('span', $icon, ['class' => 'tree-icon']);
+        echo html_writer::tag('span', s($name), ['class' => 'tree-name']);
+        echo html_writer::end_tag('label');
+        echo html_writer::end_tag('div'); // tree-row
+
+        // Children wrapper
+        if ($has_children) {
+            echo html_writer::start_tag('div', ['class' => 'tree-children']);
+            if (!empty($node['sections'])) {
+                foreach ($node['sections'] as $s) self::render_tree_node($s);
+            }
+            if (!empty($node['activities'])) {
+                foreach ($node['activities'] as $a) self::render_tree_node($a);
+            }
+            if (!empty($node['files'])) {
+                foreach ($node['files'] as $f) self::render_tree_node($f);
+            }
+            echo html_writer::end_tag('div');
+        }
+
+        echo html_writer::end_tag('div'); // tree-node
     }
 
     private static function render_ingestion_status(
@@ -190,6 +261,50 @@ class step1 {
             );
             echo html_writer::end_tag('div');
 
+            $delete_url = new moodle_url($PAGE->url, ['step' => 1, 'action' => 'delete_rag']);
+            echo html_writer::start_tag('div', ['style' => 'text-align:right; margin-bottom: 20px;']);
+            echo html_writer::link($delete_url, '🗑️ Eliminar embeddings y reiniciar', [
+                'class' => 'areteia-btn', 
+                'style' => 'background: #fff; color: #dc3545; border: 1px solid #dc3545;',
+                'data-confirm' => '¿Estás seguro de que deseas eliminar los embeddings procesados? Tendrás que volver a procesar los documentos si cambias de opinión.',
+            ]);
+            echo html_writer::end_tag('div');
+
+            // --- RAG Search Test Box ---
+            echo html_writer::start_tag('div', [
+                'class' => 'areteia-card',
+                'style' => 'border-left: 5px solid #6c63ff; background: #f8f7ff; margin-bottom:20px;',
+            ]);
+            echo html_writer::tag('strong', '🔍 Probá tu biblioteca', [
+                'style' => 'color:#6c63ff; display:block; margin-bottom:8px;',
+            ]);
+            echo html_writer::tag('p',
+                'Escribí una consulta de prueba y mirá qué fragmentos devuelve la IA desde tus documentos.',
+                ['style' => 'font-size:12px; margin:0 0 12px 0; color:#666;']
+            );
+            echo html_writer::start_tag('div', [
+                'style' => 'display:flex; gap:8px; align-items:stretch;',
+            ]);
+            echo html_writer::empty_tag('input', [
+                'type' => 'text',
+                'id' => 'rag-search-input',
+                'placeholder' => 'Ej: ¿Qué dice el material sobre gamificación?',
+                'class' => 'areteia-input',
+                'style' => 'flex:1; padding:10px 14px; border:1px solid #ddd; border-radius:8px; font-size:13px;',
+            ]);
+            echo html_writer::tag('button', 'Buscar', [
+                'id' => 'rag-search-btn',
+                'class' => 'areteia-btn areteia-btn-primary',
+                'style' => 'padding:10px 20px; border:none; border-radius:8px; cursor:pointer; font-size:13px;',
+                'data-courseid' => $id,
+            ]);
+            echo html_writer::end_tag('div');
+            echo html_writer::tag('div', '', [
+                'id' => 'rag-search-results',
+                'style' => 'margin-top:16px;',
+            ]);
+            echo html_writer::end_tag('div');
+
             step_renderer::render_nav(1, $prev_url, new moodle_url($PAGE->url, ['step' => 2]), 'Continuar al paso 2 →');
 
         } else if ($ingested == 2) {
@@ -208,6 +323,57 @@ class step1 {
             echo html_writer::end_tag('div');
 
             step_renderer::render_nav(1, $prev_url, new moodle_url($PAGE->url, ['step' => 2]), 'Continuar al paso 2 →');
+
+        } else if ($ingested == 3) {
+            // Processing in background — but check if it's actually already done
+            $real_status = \local_areteia\rag_client::status($id);
+            if (!empty($real_status['data']->embedding_exists)) {
+                self::render_ingestion_status($id, 1, true, false);
+                return;
+            }
+
+            echo html_writer::start_tag('div', [
+                'class' => 'areteia-card',
+                'style' => 'border-left: 5px solid #17a2b8; background: #f4f8ff; margin-bottom:20px;',
+            ]);
+            echo html_writer::tag('strong', '⏳ Construyendo biblioteca de IA...', [
+                'style' => 'color:#17a2b8; display:block; margin-bottom:10px;',
+            ]);
+            
+            // Progress Bar Container
+            echo html_writer::start_tag('div', ['class' => 'areteia-progress-container']);
+            echo html_writer::start_tag('div', ['class' => 'areteia-progress-bar-wrap']);
+            echo html_writer::tag('div', '', [
+                'id' => 'areteia-ingestion-bar',
+                'class' => 'areteia-progress-bar-fill',
+                'style' => 'width: 5%;'
+            ]);
+            echo html_writer::end_tag('div');
+            
+            echo html_writer::start_tag('div', ['class' => 'areteia-progress-info']);
+            echo html_writer::tag('span', 'Iniciando...', ['id' => 'areteia-ingestion-status', 'class' => 'areteia-progress-status']);
+            echo html_writer::tag('span', '5%', ['id' => 'areteia-ingestion-percent']);
+            echo html_writer::end_tag('div');
+            echo html_writer::end_tag('div'); // progress-container
+
+            echo html_writer::tag('p',
+                'Este proceso es intensivo en CPU. Una vez finalizado, podrás probar el buscador semántico.',
+                ['style' => 'font-size:12px; line-height:1.4; margin-top:15px; color:#666;']
+            );
+            echo html_writer::end_tag('div');
+            
+            // Initialize the poller
+            echo html_writer::tag('script', "document.addEventListener('DOMContentLoaded', () => { initIngestionPoller($id); });");
+
+            
+            echo html_writer::start_tag('div', ['class' => 'areteia-nav']);
+            echo html_writer::link($prev_url, '← Volver', ['class' => 'areteia-btn']);
+            echo html_writer::tag('span', 'Paso 1 de 7', ['class' => 'areteia-ncnt']);
+            echo html_writer::tag('span', 'Procesando...', [
+                'class' => 'areteia-btn disabled',
+                'style' => 'opacity:0.7; cursor:wait;',
+            ]);
+            echo html_writer::end_tag('div');
 
         } else if ($ingested == -1) {
             // Error
@@ -236,13 +402,25 @@ class step1 {
                 'class' => 'areteia-btn disabled',
                 'style' => 'opacity:0.7; cursor:wait;',
             ]);
-            echo '<script>setTimeout(() => location.reload(), 3000);</script>';
             echo html_writer::end_tag('div');
 
         } else {
-            // Ready to build
+            // Ready to build - Use a form to send the selected files list via POST
+            echo html_writer::start_tag('form', [
+                'action' => new moodle_url($PAGE->url, ['step' => 1, 'action' => 'ingest']),
+                'method' => 'POST',
+                'id'     => 'areteia-ingest-form',
+                'style'  => 'display:contents;'
+            ]);
+            echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'selected_files', 'id' => 'selected-files-input', 'value' => '']);
+            
             $ing_url = new moodle_url($PAGE->url, ['step' => 1, 'action' => 'ingest']);
-            step_renderer::render_nav(1, $prev_url, $ing_url, 'Confirmar y Construir Embeddings');
+            step_renderer::render_nav(1, $prev_url, null, 'Confirmar y Construir Embeddings', [
+                'id'      => 'confirm-ingest-btn',
+                'data-ia' => '1'
+            ]);
+            
+            echo html_writer::end_tag('form');
         }
     }
 }

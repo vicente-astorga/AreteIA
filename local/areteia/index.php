@@ -19,8 +19,21 @@
 require_once(__DIR__ . '/../../config.php');
 
 $id     = optional_param('id', 0, PARAM_INT);
-$step   = optional_param('step', 0, PARAM_INT);
-$action = optional_param('action', '', PARAM_ALPHA);
+$action = optional_param('action', 'lib', PARAM_ALPHANUMEXT);
+$step   = optional_param('step', -1, PARAM_INT); // -1 to detect if not provided
+
+// Allow server-side redirect actions to bypass tab validation
+$server_actions = ['sync', 'ingest', 'export', 'delete_rag'];
+if (!isset(\local_areteia\step_renderer::ACTIONS[$action]) && !in_array($action, $server_actions)) {
+    $action = 'lib';
+}
+
+$allowed_steps = isset(\local_areteia\step_renderer::ACTIONS[$action]['steps']) 
+    ? \local_areteia\step_renderer::ACTIONS[$action]['steps'] 
+    : [];
+if ($step === -1 || (!empty($allowed_steps) && !in_array($step, $allowed_steps))) {
+    $step = !empty($allowed_steps) ? $allowed_steps[0] : 0;
+}
 
 require_login();
 
@@ -34,11 +47,27 @@ if (!$id) {
 require_once($CFG->libdir . '/filelib.php');
 
 $context = context_course::instance($id);
-$PAGE->set_url(new moodle_url('/local/areteia/index.php', ['id' => $id, 'step' => $step]));
+$PAGE->set_url(new moodle_url('/local/areteia/index.php', [
+    'id'     => $id, 
+    'step'   => $step, 
+    'action' => $action
+]));
 $PAGE->set_context($context);
 $PAGE->set_title('AreteIA — Flujo docente');
 $PAGE->set_heading('AreteIA — Flujo módulo docente');
 $PAGE->set_pagelayout('report');
+
+// Auto-skip Step 0 if RAG already exists (for "Crear Biblioteca" action)
+if ($action === 'lib' && $step === 0 && $id > 0) {
+    try {
+        $status = \local_areteia\rag_client::status($id);
+        if ($status['data'] && !empty($status['data']->embedding_exists)) {
+            $step = 1;
+        }
+    } catch (\Exception $e) {
+        // Silently fail and stay on step 0 if service is down
+    }
+}
 
 // ------------------------------------------------------------------
 // AJAX detection — AJAX requests return only inner HTML, no header/footer
@@ -54,9 +83,9 @@ if ($is_ajax) {
 }
 
 // ------------------------------------------------------------------
-// Action handling (sync / ingest redirect before any rendering)
+// Action handling (redirect before any rendering)
 // ------------------------------------------------------------------
-if ($action === 'sync' || $action === 'ingest') {
+if (in_array($action, $server_actions)) {
     \local_areteia\action_handler::handle($action, $id, $PAGE->url, $is_ajax);
     // ^ never returns (redirect + die)
 }
@@ -86,7 +115,7 @@ try {
 
     // Inner content
     echo html_writer::start_tag('div', ['class' => 'areteia-inner']);
-    \local_areteia\step_renderer::render($step, $id, $summary, $files, $context, $is_ajax);
+    \local_areteia\step_renderer::render($action, $step, $id, $summary, $files, $context, $is_ajax);
     echo html_writer::end_tag('div'); // areteia-inner
 
     if (!$is_ajax) {
