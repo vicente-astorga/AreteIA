@@ -97,8 +97,8 @@ services:
     env_file: .env
     volumes:
       - ./areteia_ai:/app
-      # - moodledata:/var/www/moodledata:ro
       - ./moodledata:/var/www/moodledata
+      - hf_cache:/root/.cache/huggingface
 
 volumes:
   db_data:
@@ -107,3 +107,4 @@ volumes:
   npm_data:
   npm_letsencrypt:
   moodle_core:
+  hf_cache:
