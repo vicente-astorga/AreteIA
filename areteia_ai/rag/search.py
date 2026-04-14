@@ -36,12 +36,33 @@ def search_index(course_id, query, k=5):
     return results
 
 
-def search_course(course_id: int, query: str, top_k=5):
+RAG_THRESHOLD = float(os.getenv("RAG_THRESHOLD", 0.82))
+
+def search_course(course_id: int, query: str, top_k=20):
+    """
+    Search course embeddings and filter by similarity threshold.
+    """
     index, metadata = load_index(course_id)
-    query_emb = embed_text_chunks([query])[0]
+    # query_emb is already normalized by embed_text_chunks in utils.py
+    query_emb = embed_text_chunks([query], prefix="query: ")[0]
+    
+    # Since we use IndexFlatIP and normalized vectors, distance is Cosine Similarity
     D, I = index.search(query_emb.reshape(1, -1), top_k)
+    
     results = []
-    for idx in I[0]:
-        if idx < len(metadata):
-            results.append(metadata[idx])
+    for rank, idx in enumerate(I[0]):
+        score = float(D[0][rank])
+        
+        # Un-biasing rescaling: Maps [0.80, 1.0] -> [0.0, 1.0]
+        # This makes the "coincidence" percentage much more intuitive
+        rescaled_score = max(0.0, min(1.0, (score - 0.80) / (1.0 - 0.80)))
+        
+        if idx < len(metadata) and score >= RAG_THRESHOLD:
+            entry = dict(metadata[idx])
+            entry["similarity"] = rescaled_score
+            entry["raw_score"] = score
+            entry["rank"] = len(results) + 1
+            results.append(entry)
+            
     return results
+

@@ -6,9 +6,7 @@ sentence-transformers
 pypdf
 python-docx
 pydantic
-python-docx
 python-pptx
-PyPDF2
 langchain==0.0.202
 dashscope
 python-dotenv

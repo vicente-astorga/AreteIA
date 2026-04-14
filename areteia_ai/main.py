@@ -1,24 +1,29 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, BackgroundTasks
 from pydantic import BaseModel
 import logging
 import os
 
-from rag.pipeline import run_ingestion
 from rag.store import get_index_path, get_metadata_path
-from rag.search import search_index, search_course
-from llm import (
-    generate_completion, 
-    get_suggestions_prompt, 
-    get_design_prompt, 
-    get_rubric_prompt
-)
+# Heavy imports moved inside endpoints to avoid blocking startup
+
 
 app = FastAPI(title="AreteIA AI Service")
 logging.basicConfig(level=logging.INFO)
 
+@app.on_event("startup")
+async def startup_event():
+    # Warm up the embedding model
+    from rag.utils import get_model
+    logging.info("Warming up embedding model (FastEmbed)...")
+    get_model()
+    logging.info("Model ready.")
+
 class SyncRequest(BaseModel):
     course: dict = {}
     files: list = []
+
+# Thread-safe (mostly) dictionary to track background task progress
+INGESTION_PROGRESS = {}
 
 class IngestRequest(BaseModel):
     course_id: int
@@ -53,25 +58,26 @@ async def sync_course(request: SyncRequest):
 
 
 @app.post("/ingest")
-async def ingest_course(request: IngestRequest):
+async def ingest_course(request: IngestRequest, background_tasks: BackgroundTasks):
     """
-    Trigger ingestion for a course folder (chunking + embeddings).
+    Trigger ingestion for a course folder in the background.
     """
     if not request.course_id:
         return {"status": "error", "message": "course_id is required"}
 
-    try:
-        n_chunks = run_ingestion(request.course_id)
-        status = "success" if n_chunks > 0 else "empty"
-        return {
-            "status": status,
-            "chunks": n_chunks,
-            "message": f"Ingested course {request.course_id} into {n_chunks} chunks"
-        }
-    except Exception as e:
-        logging.exception("Error ingesting course")
-        return {"status": "error", "message": str(e)}
+    from rag.pipeline import run_ingestion
+    
+    # Initialize progress
+    INGESTION_PROGRESS[request.course_id] = {"progress": 0, "message": "Iniciando..."}
+    
+    def progress_callback(val, msg):
+        INGESTION_PROGRESS[request.course_id] = {"progress": val, "message": msg}
 
+    background_tasks.add_task(run_ingestion, request.course_id, progress_callback=progress_callback)
+    return {
+        "status": "started",
+        "message": f"Ingestion triggered in background for course {request.course_id}"
+    }
 
 @app.post("/search")
 async def search_endpoint(request: SearchRequest):
@@ -81,6 +87,7 @@ async def search_endpoint(request: SearchRequest):
     if not request.course_id or not request.query:
         return {"status": "error", "message": "course_id and query required"}
 
+    from rag.search import search_course
     try:
         results = search_course(request.course_id, request.query)
         return {"status": "success", "results": results}
@@ -95,6 +102,14 @@ async def generate_endpoint(request: GenerateRequest):
     Main generative endpoint for Steps 4, 5, and 6.
     """
     try:
+        from llm import (
+            generate_completion, 
+            get_suggestions_prompt, 
+            get_design_prompt, 
+            get_rubric_prompt
+        )
+        from rag.search import search_course
+
         prompt = ""
         # 1. Fetch RAG context if not provided
         rag_text = request.rag_context
@@ -130,34 +145,35 @@ async def generate_endpoint(request: GenerateRequest):
 def check_status(course_id: int):
     try:
         from rag.store import get_index_path, get_metadata_path
-        index_path = get_index_path(course_id)
-        metadata_path = get_metadata_path(course_id)
         
-        exists = os.path.exists(index_path)
-        chunks = 0
-        
-        if exists and os.path.exists(metadata_path):
-            import pickle
-            with open(metadata_path, "rb") as f:
-                metadata = pickle.load(f)
-                chunks = len(metadata)
-        else:
-            exists = False
-
+        # 1. Check active background progress first
+        if course_id in INGESTION_PROGRESS:
+            return {"status": "success", "data": INGESTION_PROGRESS[course_id]}
+            
         return {
-            "course_id": course_id, 
-            "embedding_exists": exists, 
-            "chunks": chunks,
-            "path": index_path
+            "status": "success",
+            "data": {
+                "progress": 100 if exists else 0,
+                "message": "Completado" if exists else "Pendiente",
+                "embedding_exists": exists,
+                "chunks": chunks
+            }
         }
     except Exception as e:
-        logging.error(f"Error checking status for course {course_id}: {e}")
-        # Fallback to simple disk check if loading metadata fails
-        from rag.store import get_index_path
-        disk_exists = os.path.exists(get_index_path(course_id))
-        return {
-            "course_id": course_id, 
-            "embedding_exists": disk_exists, 
-            "chunks": 0, 
-            "error": str(e)
-        }
+        return {"status": "error", "message": str(e)}
+
+
+@app.delete("/ingest/{course_id}")
+async def delete_embeddings(course_id: int):
+    """
+    Delete the RAG index and metadata for a course.
+    """
+    from rag.store import get_index_path, get_metadata_path
+    import os
+    index = get_index_path(course_id)
+    meta = get_metadata_path(course_id)
+    if os.path.exists(index):
+        os.remove(index)
+    if os.path.exists(meta):
+        os.remove(meta)
+    return {"status": "success", "message": "Embeddings deleted"}

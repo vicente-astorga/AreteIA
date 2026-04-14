@@ -16,7 +16,7 @@ def get_metadata_path(course_id):
 
 def save_index(course_id, embeddings, metadata):
     dim = len(embeddings[0])
-    index = faiss.IndexFlatL2(dim)
+    index = faiss.IndexFlatIP(dim)
     index.add(embeddings)
     course_dir = get_course_dir(course_id)
     os.makedirs(course_dir, exist_ok=True)
