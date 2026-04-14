@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from rag.store import save_index, load_index
+from rag.store import save_index
 from rag.utils import extract_pdf, extract_docx, extract_pptx, embed_text_chunks
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 BASE_PATH = os.getenv("ARETEIA_SYNC_PATH", "/var/www/moodledata/areteia_sync")
@@ -49,12 +49,3 @@ def run_ingestion(course_id: int,  chunk_size=500, overlap=50):
     save_index(course_id, embeddings, metadata)
     return len(all_chunks)
 
-def search_course(course_id: int, query: str, top_k=5):
-    index, metadata = load_index(course_id)
-    query_emb = embed_text_chunks([query])[0]
-    D, I = index.search(query_emb.reshape(1, -1), top_k)
-    results = []
-    for idx in I[0]:
-        if idx < len(metadata):
-            results.append(metadata[idx])
-    return results

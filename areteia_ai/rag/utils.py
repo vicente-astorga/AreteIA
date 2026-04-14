@@ -3,6 +3,10 @@ import docx
 from pptx import Presentation
 from sentence_transformers import SentenceTransformer
 import numpy as np
+import torch
+
+# Limit CPU threads to prevent system saturation on the 16-core VM
+torch.set_num_threads(8)
 
 # Lazy load model
 _MODEL = None
@@ -11,7 +15,7 @@ def get_model():
     global _MODEL
     if _MODEL is None:
         from sentence_transformers import SentenceTransformer
-        _MODEL = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+        _MODEL = SentenceTransformer("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
     return _MODEL
 
 def extract_pdf(path):
