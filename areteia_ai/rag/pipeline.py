@@ -1,4 +1,4 @@
-import logging, os
+import logging, os, json
 import numpy as np
 from pathlib import Path
 from rag.store import save_index
@@ -7,7 +7,7 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 BASE_PATH = os.getenv("ARETEIA_SYNC_PATH", "/var/www/moodledata/areteia_sync")
 
 
-def run_ingestion(course_id: int,  chunk_size=1500, overlap=100, progress_callback=None):
+def run_ingestion(course_id: int,  chunk_size=1000, overlap=250, progress_callback=None):
     """
     Read course folder, split files into chunks, embed, save index and metadata.
     """
@@ -95,20 +95,19 @@ def run_ingestion(course_id: int,  chunk_size=1500, overlap=100, progress_callba
         # 4. Save Index and Metadata
         update_p(90, "Guardando índice en disco...")
         save_index(course_id, embeddings_np, metadata)
+
+        # 5. Save selected_files.json — list of relative paths that were embedded
+        selected_files = sorted(set(
+            str(Path(m["path"]).relative_to(folder_path))
+            for m in metadata
+        ))
+        selected_files_path = folder_path / "selected_files.json"
+        with open(selected_files_path, "w", encoding="utf-8") as f:
+            json.dump(selected_files, f, ensure_ascii=False, indent=2)
+
         update_p(100, "¡Biblioteca construida con éxito!")
         return total_chunks
     else:
         update_p(0, "Error: No se encontró texto para procesar")
         return 0
 
-
-def search_course(course_id: int, query: str, top_k=5):
-    index, metadata = load_index(course_id)
-    # query_emb is already normalized by embed_text_chunks in utils.py
-    query_emb = embed_text_chunks([query], prefix="query: ")[0]
-    D, I = index.search(query_emb.reshape(1, -1), top_k)
-    results = []
-    for idx in I[0]:
-        if idx < len(metadata):
-            results.append(metadata[idx])
-    return results

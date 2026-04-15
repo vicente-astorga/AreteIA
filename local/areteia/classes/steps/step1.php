@@ -44,13 +44,22 @@ class step1 {
 
         // Check embedding status from Python service
         $status_result    = rag_client::status($id);
-        $status_data      = $status_result['data'];
+        $status_data      = $status_result['data'];   // puede tener progress durante build
         $status_raw       = $status_result['raw'];
-        $already_ingested = ($status_data && !empty($status_data->embedding_exists));
+        $status_obj       = @json_decode($status_raw); // objeto completo del Python
+
+        // Nuevo formato: embedding_exists en el root del JSON
+        $already_ingested = !empty($status_obj->embedding_exists);
         $service_down     = ($status_raw === false || empty($status_raw));
 
+        // Archivos que fueron usados en el embedding anterior ([] = nunca generados)
+        $prev_selected = [];
+        if (!empty($status_obj->selected_files) && is_array($status_obj->selected_files)) {
+            $prev_selected = $status_obj->selected_files;
+        }
+
         if ($use_moodle) {
-            self::render_moodle_fields($id, $summary, $files, $already_ingested, $service_down, $status_data);
+            self::render_moodle_fields($id, $summary, $files, $already_ingested, $service_down, $status_data, $prev_selected);
         } else {
             echo $OUTPUT->notification('Carga manual no implementada en este prototipo.', 'warning');
         }
@@ -70,7 +79,8 @@ class step1 {
         array $files,
         bool $already_ingested,
         bool $service_down,
-        ?object $status_data
+        ?object $status_data,
+        array $prev_selected = []
     ): void {
         global $PAGE;
 
@@ -111,7 +121,7 @@ class step1 {
         echo html_writer::start_tag('div', ['class' => 'areteia-flbl']);
         echo 'Materiales detectados ' . html_writer::tag('span', 'Moodle', ['class' => 'areteia-origin']);
         if ($already_ingested) {
-            $chunks = $status_data->chunks ?? 0;
+            $chunks = $status_obj->chunks ?? 0;
             echo html_writer::tag('span', "Verificado ($chunks fragmentos)", ['class' => 'sb-tag sb-ok']);
         } else if ($service_down) {
             echo html_writer::tag('span', 'Servicio no disponible', [
@@ -152,7 +162,7 @@ class step1 {
                 'style' => 'margin-left:10px; padding: 4px 10px; border-radius: 12px; font-size: 11px;'
             ]);
             echo html_writer::end_tag('div');
-            self::render_materials_tree($tree);
+            self::render_materials_tree($tree, $prev_selected);
         }
 
         echo html_writer::end_tag('div'); // areteia-fb
@@ -162,17 +172,20 @@ class step1 {
 
     /**
      * Recursively render the hierarchical materials tree.
+     * @param array $selected_files  Relative paths that were previously embedded.
+     *                               Empty array = initial load, check everything.
      */
-    private static function render_materials_tree(array $tree): void {
+    private static function render_materials_tree(array $tree, array $selected_files = []): void {
         echo html_writer::start_tag('div', ['class' => 'areteia-tree', 'id' => 'materials-tree']);
-        self::render_tree_node($tree, 0);
+        self::render_tree_node($tree, 0, $selected_files);
         echo html_writer::end_tag('div');
     }
 
     /**
      * Helper to render a single tree node and its children.
+     * @param array $selected_files  Relative paths from embedding. Empty = all checked.
      */
-    private static function render_tree_node(array $node): void {
+    private static function render_tree_node(array $node, int $depth = 0, array $selected_files = []): void {
         $type = $node['type'];
         $id   = $node['id'];
         $name = $node['name'];
@@ -200,16 +213,26 @@ class step1 {
             echo html_writer::tag('span', '', ['class' => 'tree-toggle-spacer']);
         }
 
-        $checked = 'checked'; // Default to checked
+        // Pre-check: if no prior selection exists (first time), check all.
+        // If a prior selection exists, check only files that were embedded.
+        $relpath = $node['relpath'] ?? '';
+        if ($type === 'file') {
+            $is_checked = empty($selected_files) || in_array($relpath, $selected_files, true);
+        } else {
+            // JS updateParentStates() will accurately calculate checked/indeterminate 
+            // states for all parent nodes on initialization.
+            $is_checked = false;
+        }
+
         $attr = [
-            'type'           => 'checkbox',
-            'class'          => 'tree-cb',
-            'id'             => $uid,
-            'data-type'      => $type,
-            'data-id'        => $id,
-            'value'          => ($type === 'file' ? ($node['relpath'] ?? '') : $id)
+            'type'      => 'checkbox',
+            'class'     => 'tree-cb',
+            'id'        => $uid,
+            'data-type' => $type,
+            'data-id'   => $id,
+            'value'     => ($type === 'file' ? $relpath : $id)
         ];
-        if ($checked) $attr['checked'] = 'checked';
+        if ($is_checked) $attr['checked'] = 'checked';
 
         echo html_writer::empty_tag('input', $attr);
         echo html_writer::start_tag('label', ['for' => $uid, 'class' => 'tree-label-text']);
@@ -222,13 +245,13 @@ class step1 {
         if ($has_children) {
             echo html_writer::start_tag('div', ['class' => 'tree-children']);
             if (!empty($node['sections'])) {
-                foreach ($node['sections'] as $s) self::render_tree_node($s);
+                foreach ($node['sections'] as $s) self::render_tree_node($s, $depth + 1, $selected_files);
             }
             if (!empty($node['activities'])) {
-                foreach ($node['activities'] as $a) self::render_tree_node($a);
+                foreach ($node['activities'] as $a) self::render_tree_node($a, $depth + 1, $selected_files);
             }
             if (!empty($node['files'])) {
-                foreach ($node['files'] as $f) self::render_tree_node($f);
+                foreach ($node['files'] as $f) self::render_tree_node($f, $depth + 1, $selected_files);
             }
             echo html_writer::end_tag('div');
         }
@@ -326,8 +349,9 @@ class step1 {
 
         } else if ($ingested == 3) {
             // Processing in background — but check if it's actually already done
-            $real_status = \local_areteia\rag_client::status($id);
-            if (!empty($real_status['data']->embedding_exists)) {
+            $real_status_raw = \local_areteia\rag_client::status($id)['raw'];
+            $real_status_obj = @json_decode($real_status_raw);
+            if (!empty($real_status_obj->embedding_exists)) {
                 self::render_ingestion_status($id, 1, true, false);
                 return;
             }
@@ -397,7 +421,7 @@ class step1 {
             // Service not ready
             echo html_writer::start_tag('div', ['class' => 'areteia-nav']);
             echo html_writer::link($prev_url, '← Volver', ['class' => 'areteia-btn']);
-            echo html_writer::tag('span', 'Paso 1 de 7', ['class' => 'areteia-ncnt']);
+            echo html_writer::tag('span', 'Paso 1 de 2', ['class' => 'areteia-ncnt']);
             echo html_writer::tag('span', 'Esperando al servicio de IA...', [
                 'class' => 'areteia-btn disabled',
                 'style' => 'opacity:0.7; cursor:wait;',
@@ -405,21 +429,29 @@ class step1 {
             echo html_writer::end_tag('div');
 
         } else {
-            // Ready to build - Use a form to send the selected files list via POST
+            // Ready to build — native form POST
             echo html_writer::start_tag('form', [
                 'action' => new moodle_url($PAGE->url, ['step' => 1, 'action' => 'ingest']),
                 'method' => 'POST',
                 'id'     => 'areteia-ingest-form',
-                'style'  => 'display:contents;'
             ]);
-            echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'selected_files', 'id' => 'selected-files-input', 'value' => '']);
-            
-            $ing_url = new moodle_url($PAGE->url, ['step' => 1, 'action' => 'ingest']);
-            step_renderer::render_nav(1, $prev_url, null, 'Confirmar y Construir Embeddings', [
-                'id'      => 'confirm-ingest-btn',
-                'data-ia' => '1'
+            echo html_writer::empty_tag('input', [
+                'type'  => 'hidden',
+                'name'  => 'selected_files',
+                'id'    => 'selected-files-input',
+                'value' => ''
             ]);
-            
+
+            echo html_writer::start_tag('div', ['class' => 'areteia-nav']);
+            echo html_writer::link($prev_url, '← Anterior', ['class' => 'areteia-btn']);
+            echo html_writer::tag('span', 'Paso 2 de 2', ['class' => 'areteia-ncnt']);
+            echo html_writer::tag('button', 'Confirmar y Construir Embeddings', [
+                'type'  => 'submit',
+                'id'    => 'confirm-ingest-btn',
+                'class' => 'areteia-btn areteia-btn-primary',
+            ]);
+            echo html_writer::end_tag('div');
+
             echo html_writer::end_tag('form');
         }
     }

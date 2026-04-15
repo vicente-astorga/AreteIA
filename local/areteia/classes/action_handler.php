@@ -80,36 +80,52 @@ class action_handler {
         global $CFG;
         \core_php_time_limit::raise(600);
 
-        // 1. Force a clean physical extraction of ALL allowed course files to disk first,
-        // because the user might have arrived here cleanly via tabs without hitting sync.
+        // 1. Force a clean physical extraction of ALL allowed course files to disk.
         data_provider::get_course_files($course_id, true);
 
-        // 2. Filter files if a selection was made
+        // 2. Filter: only keep user-selected files on disk before calling Python.
         $selected_files_raw = optional_param('selected_files', '', PARAM_RAW);
+        error_log("[AreteIA] handle_ingest course={$course_id} selected_files_raw=" . substr($selected_files_raw, 0, 300));
+
         if (!empty($selected_files_raw)) {
             $selected_files = json_decode($selected_files_raw, true);
-            if (is_array($selected_files)) {
-                $base_sync_dir = $CFG->dataroot . '/areteia_sync/course_' . $course_id;
+
+            if (is_array($selected_files) && count($selected_files) > 0) {
+                // Normalize: trim whitespace and unify directory separators
+                $selected_files = array_map(function($p) {
+                    return str_replace('\\', '/', trim($p));
+                }, $selected_files);
+
+                error_log("[AreteIA] Selected files (" . count($selected_files) . "): " . implode(', ', $selected_files));
+
+                $base_sync_dir = rtrim($CFG->dataroot . '/areteia_sync/course_' . $course_id, '/');
+
                 if (file_exists($base_sync_dir)) {
-                    $directory = new \RecursiveDirectoryIterator($base_sync_dir);
-                    $iterator = new \RecursiveIteratorIterator($directory);
-                    
+                    $directory = new \RecursiveDirectoryIterator($base_sync_dir, \RecursiveDirectoryIterator::SKIP_DOTS);
+                    $iterator  = new \RecursiveIteratorIterator($directory);
+
                     foreach ($iterator as $file) {
                         if ($file->isDir()) continue;
-                        
-                        // Get path relative to course_XX folder
-                        $relative_path = substr($file->getPathname(), strlen($base_sync_dir) + 1);
-                        
-                        // If not in selected list, delete it
+
+                        // Relative path from course sync dir, normalized to forward slashes
+                        $relative_path = str_replace('\\', '/', substr($file->getPathname(), strlen($base_sync_dir) + 1));
+
                         if (!in_array($relative_path, $selected_files)) {
+                            error_log("[AreteIA] Deleting unselected: {$relative_path}");
                             @unlink($file->getPathname());
+                        } else {
+                            error_log("[AreteIA] Keeping selected: {$relative_path}");
                         }
                     }
                 }
+            } else {
+                error_log("[AreteIA] WARNING: selected_files JSON decoded to empty/non-array. Raw: " . $selected_files_raw);
             }
+        } else {
+            error_log("[AreteIA] WARNING: selected_files is empty — ingesting ALL files.");
         }
 
-        $res_data = rag_client::ingest($course_id);
+        $res_data = rag_client::ingest($course_id, $selected_files ?? []);
 
         // Determine ingestion state: 1=success, 2=empty, 3=processing, -1=error
         if ($res_data && $res_data->status == 'success') {

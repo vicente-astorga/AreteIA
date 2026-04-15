@@ -1,6 +1,7 @@
 from fastapi import FastAPI, BackgroundTasks
 from pydantic import BaseModel
 import logging
+import json
 import os
 
 from rag.store import get_index_path, get_metadata_path
@@ -46,6 +47,7 @@ INGESTION_PROGRESS = {}
 
 class IngestRequest(BaseModel):
     course_id: int
+    selected_files: list[str] = []
 
 class SearchRequest(BaseModel):
     course_id: int
@@ -79,10 +81,18 @@ async def ingest_course(request: IngestRequest, background_tasks: BackgroundTask
     from rag.pipeline import run_ingestion
     
     # Initialize progress
-    INGESTION_PROGRESS[request.course_id] = {"progress": 0, "message": "Iniciando..."}
+    INGESTION_PROGRESS[request.course_id] = {
+        "progress": 0, 
+        "message": "Iniciando...",
+        "selected_files": request.selected_files
+    }
     
     def progress_callback(val, msg):
-        INGESTION_PROGRESS[request.course_id] = {"progress": val, "message": msg}
+        INGESTION_PROGRESS[request.course_id] = {
+            "progress": val, 
+            "message": msg,
+            "selected_files": request.selected_files
+        }
 
     background_tasks.add_task(run_ingestion, request.course_id, progress_callback=progress_callback)
     return {
@@ -320,25 +330,44 @@ async def generate_endpoint(request: GenerateRequest):
 @app.get("/status/{course_id}")
 def check_status(course_id: int):
     try:
-        from rag.store import get_index_path, get_metadata_path
-        
+        from rag.store import get_index_path, get_metadata_path, get_course_dir
+        import pickle
+
+        index_path = get_index_path(course_id)
+        meta_path  = get_metadata_path(course_id)
+        sel_path   = f"{get_course_dir(course_id)}/selected_files.json"
+
+        exists = os.path.exists(index_path) and os.path.exists(meta_path)
+        chunks = 0
+        selected_files = []
+
+        if exists:
+            with open(meta_path, "rb") as f:
+                meta = pickle.load(f)
+            chunks = len(meta)
+
+        if os.path.exists(sel_path):
+            with open(sel_path, "r", encoding="utf-8") as f:
+                selected_files = json.load(f)
+
         # 1. Check active background progress first
         if course_id in INGESTION_PROGRESS:
-            return {"status": "success", "data": INGESTION_PROGRESS[course_id]}
-            
-        index_path = get_index_path(course_id)
-        exists = os.path.exists(index_path)
-        chunks = 0
-        if exists:
-            try:
-                with open(get_metadata_path(course_id), "r") as f:
-                    meta = json.load(f)
-                    chunks = meta.get("chunks", 0)
-            except:
-                pass
+            prog = INGESTION_PROGRESS[course_id]
+            # If finished (100%), remove from tracker so next call returns the static state
+            if prog.get("progress", 0) >= 100:
+                INGESTION_PROGRESS.pop(course_id, None)
+            else:
+                return {
+                    "status": "success", 
+                    "data": prog,
+                    "selected_files": prog.get("selected_files", [])
+                }
 
         return {
             "status": "success",
+            "embedding_exists": exists,
+            "chunks": chunks,
+            "selected_files": selected_files,
             "data": {
                 "progress": 100 if exists else 0,
                 "message": "Completado" if exists else "Pendiente",
@@ -353,14 +382,16 @@ def check_status(course_id: int):
 @app.delete("/ingest/{course_id}")
 async def delete_embeddings(course_id: int):
     """
-    Delete the RAG index and metadata for a course.
+    Delete the RAG index, metadata and selected_files list for a course.
     """
-    from rag.store import get_index_path, get_metadata_path
+    from rag.store import get_index_path, get_metadata_path, get_course_dir
     import os
-    index = get_index_path(course_id)
-    meta = get_metadata_path(course_id)
-    if os.path.exists(index):
-        os.remove(index)
-    if os.path.exists(meta):
-        os.remove(meta)
+    for path in [
+        get_index_path(course_id),
+        get_metadata_path(course_id),
+        f"{get_course_dir(course_id)}/selected_files.json",
+    ]:
+        if os.path.exists(path):
+            os.remove(path)
+    INGESTION_PROGRESS.pop(course_id, None)
     return {"status": "success", "message": "Embeddings deleted"}

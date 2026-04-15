@@ -33,10 +33,14 @@ class rag_client {
      * Returns the decoded response or null on network failure.
      *
      * @param int $course_id
+     * @param array $selected_files (Optional) list of selected file paths
      * @return object|null  { status, chunks, ... }
      */
-    public static function ingest(int $course_id): ?object {
-        $response = self::post('/ingest', json_encode(['course_id' => $course_id]), 600, 30);
+    public static function ingest(int $course_id, array $selected_files = []): ?object {
+        $response = self::post('/ingest', json_encode([
+            'course_id' => $course_id,
+            'selected_files' => $selected_files
+        ]), 600, 30);
         return @json_decode($response);
     }
     

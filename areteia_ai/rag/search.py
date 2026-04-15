@@ -2,54 +2,46 @@ import faiss
 import pickle
 import numpy as np
 import os
+import logging
 from pathlib import Path
 
-from rag.embed import embed_texts
-from rag.store import get_index_path, get_metadata_path, save_index, load_index
-from rag.utils import extract_pdf, extract_docx, extract_pptx, embed_text_chunks
+from rag.store import get_index_path, get_metadata_path, load_index
+from rag.utils import embed_text_chunks
 
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 
-def search_index(course_id, query, k=5):
-    index_path = get_index_path(course_id)
-    metadata_path = get_metadata_path(course_id)
 
-    # Load index
-    index = faiss.read_index(index_path)
+RAG_THRESHOLD = float(os.getenv("RAG_THRESHOLD", 0.80))
 
-    # Load metadata
-    with open(metadata_path, "rb") as f:
-        metadata = pickle.load(f)
+def map_score_pedagogical(raw_score: float) -> float:
+    """
+    Maps raw E5 cosine similarities (which compress near 0.82-0.90) 
+    into an intuitive 0-100% scale for teachers.
+    """
+    if raw_score >= 0.90:
+        return 0.85 + (raw_score - 0.90) * 1.5
+    if raw_score >= 0.84:
+        return 0.50 + ((raw_score - 0.84) / 0.06) * 0.35
+    if raw_score >= 0.80:
+        return 0.05 + ((raw_score - 0.80) / 0.04) * 0.45
+    return 0.05
 
-    # Embed query
-    query_vector = embed_texts([query])
-    query_vector = np.array(query_vector).astype("float32")
-
-    # Search
-    distances, indices = index.search(query_vector, k)
-
-    results = []
-    for i in indices[0]:
-        if i < len(metadata):
-            results.append(metadata[i])
-
-    return results
-
-
-RAG_THRESHOLD = float(os.getenv("RAG_THRESHOLD", 0.82))
-
-def search_course(course_id: int, query: str, top_k=10):
+def search_course(course_id: int, query: str, top_k=20, threshold=None):
     """
     Search course embeddings and filter by similarity threshold.
+    Uses the same E5 model + prefix convention as ingestion.
     """
     query_emb = embed_text_chunks([query], prefix="query: ")[0]
-    return search_course_by_vector(course_id, query_emb, top_k)
+    return search_course_by_vector(course_id, query_emb, top_k, threshold)
 
-def search_course_by_vector(course_id: int, query_vector: np.ndarray, top_k=10):
+def search_course_by_vector(course_id: int, query_vector: np.ndarray, top_k=10, threshold=None):
     """
     Perform search using a pre-computed vector. 
     Useful for batch processing.
     """
+    if threshold is None:
+        threshold = RAG_THRESHOLD
+
     try:
         index, metadata = load_index(course_id)
     except Exception as e:
@@ -65,15 +57,17 @@ def search_course_by_vector(course_id: int, query_vector: np.ndarray, top_k=10):
     results = []
     for rank, idx in enumerate(I[0]):
         score = float(D[0][rank])
-        rescaled_score = max(0.0, min(1.0, (score - 0.80) / (1.0 - 0.80)))
         
-        if idx < len(metadata) and score >= RAG_THRESHOLD:
+        if idx < len(metadata) and score >= threshold:
             entry = dict(metadata[idx])
-            entry["similarity"] = rescaled_score
+            # Apply statistical makeup mapping
+            entry["similarity"] = map_score_pedagogical(score)
             entry["raw_score"] = score
             entry["rank"] = len(results) + 1
             results.append(entry)
-            
+    
+    logging.info(f"[RAG Search] course={course_id} vector_search results={len(results)} "
+                 f"top_score={float(D[0][0]):.4f} threshold={threshold}")
     return results
 
 def search_guidelines(query: str, top_k=5):
@@ -86,4 +80,3 @@ def search_guidelines(query: str, top_k=5):
         import logging
         logging.warning(f"Guidelines index not found or error: {e}")
         return []
-

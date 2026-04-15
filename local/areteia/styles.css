@@ -208,7 +208,7 @@ body#page-local-areteia-index #region-main {
     display: inline-block;
     transition: background .2s, border-color .2s;
 }
-.areteia-btn:hover { background: #f8f9fa; border-color: #adb5bd; text-decoration: none; }
+.areteia-btn:hover { border-color: #adb5bd; text-decoration: none; }
 .areteia-btn-primary { background: #185fa5; color: #fff; border-color: #185fa5; }
 .areteia-btn-primary:hover { background: #144d86; border-color: #144d86; color: #fff; }
 

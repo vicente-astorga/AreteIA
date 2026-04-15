@@ -11,13 +11,21 @@ document.addEventListener("click", e => {
     const link = e.target.closest("a.opt, a.s0-card, a.sug-card, a.areteia-btn, a.fb-btn, a.areteia-dot");
     if (!link || link.classList.contains("external")) return;
 
-    e.preventDefault();
+    // Skip the ingest button — it is handled exclusively by initIngestionForm() via native form POST
+    if (link.id === 'confirm-ingest-btn') return;
+
+    // Guard: only intercept real anchor tags with a valid href (not plain <button>)
+    if (link.tagName !== 'A' || !link.href || link.href === '#' || link.href === window.location.href + '#') {
+        return;
+    }
 
     // Confirmation dialog (before fetch)
     if (link.dataset.confirm && !confirm(link.dataset.confirm)) {
         e.preventDefault();
         return;
     }
+
+    e.preventDefault();
 
     const url = new URL(link.href);
     url.searchParams.set("ajax", "1");
@@ -31,10 +39,10 @@ document.addEventListener("click", e => {
         url.searchParams.set("feedback", feedbackArea.value.trim());
     }
 
-    // Capture material selection in Step 1 if starting ingestion
     // Determine method and body
     let options = { method: 'GET' };
     
+    // Use POST if we have a large d2_json payload (Step 3 dynamic form) or if starting material ingestion
     if (url.searchParams.has("d2_json") || url.searchParams.get("action") === "ingest") {
         options.method = 'POST';
         options.headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
@@ -43,8 +51,8 @@ document.addEventListener("click", e => {
         url.searchParams.forEach((val, key) => body.append(key, val));
         options.body = body.toString();
         
-        // When using POST, the request URL itself should be clean of the payload params 
-        // to avoid clashing or length limits, but index.php needs action/step/id in GET often.
+        // When using POST, the request URL itself should ideally be clean of the payload params 
+        // to avoid length limits, but index.php still needs action/step/id in GET often.
     }
 
     fetch(url, options).then(r => {
@@ -53,6 +61,7 @@ document.addEventListener("click", e => {
         finalUrl.searchParams.delete("ajax");
         
         const isStepChange = finalUrl.searchParams.get("step") !== new URL(location.href).searchParams.get("step");
+        
         window.history.pushState({}, "", finalUrl.toString());
         return r.text().then(html => ({ html, isStepChange }));
     }).then(({ html, isStepChange }) => {
@@ -67,6 +76,8 @@ document.addEventListener("click", e => {
         initStep3Reactivity();
         initGenerativeLoading();
         initTreeCheckboxes();
+        initRagSearchTest();
+        initIngestionForm();
     }).catch(err => {
         console.error(err);
         alert("Error en la comunicación con el servidor. Por favor, reintenta.");
@@ -97,8 +108,11 @@ function initTreeCheckboxes() {
         }
     });
 
-    // Initial count
+    // Initial count and parent states
     updateSelectionCount();
+    document.querySelectorAll('.tree-cb[data-type="file"]').forEach(cb => {
+        updateParentStates(cb);
+    });
 
     tree.addEventListener('change', e => {
         if (!e.target.classList.contains('tree-cb')) return;
@@ -149,22 +163,27 @@ function updateParentStates(startCb) {
     let current = startCb.closest('.tree-node').parentElement.closest('.tree-node');
     
     while (current) {
-        const parentCb = current.querySelector('.tree-cb');
-        const siblingNodes = current.querySelectorAll(':scope > .tree-node > .tree-row .tree-cb');
+        const parentCb = current.querySelector('.tree-row .tree-cb');
         
-        if (siblingNodes.length > 0) {
-            const checkedCount = Array.from(siblingNodes).filter(c => c.checked).length;
-            const isIndeterminate = Array.from(siblingNodes).some(c => c.indeterminate);
+        const treeChildren = Array.from(current.children).find(el => el.classList.contains('tree-children'));
+        if (treeChildren && parentCb) {
+            const childNodes = Array.from(treeChildren.children).filter(el => el.classList.contains('tree-node'));
+            const siblingNodes = childNodes.map(node => node.querySelector('.tree-row .tree-cb')).filter(cb => cb);
             
-            if (checkedCount === 0) {
-                parentCb.checked = false;
-                parentCb.indeterminate = isIndeterminate;
-            } else if (checkedCount === siblingNodes.length) {
-                parentCb.checked = true;
-                parentCb.indeterminate = false;
-            } else {
-                parentCb.checked = false;
-                parentCb.indeterminate = true;
+            if (siblingNodes.length > 0) {
+                const checkedCount = siblingNodes.filter(c => c.checked).length;
+                const isIndeterminate = siblingNodes.some(c => c.indeterminate);
+                
+                if (checkedCount === 0) {
+                    parentCb.checked = false;
+                    parentCb.indeterminate = isIndeterminate;
+                } else if (checkedCount === siblingNodes.length) {
+                    parentCb.checked = true;
+                    parentCb.indeterminate = false;
+                } else {
+                    parentCb.checked = false;
+                    parentCb.indeterminate = true;
+                }
             }
         }
         current = current.parentElement.closest('.tree-node');
@@ -288,7 +307,7 @@ function initStep3Reactivity() {
  * Shows a spinner and "Generando con IA..." label on click.
  */
 function initGenerativeLoading() {
-    document.querySelectorAll('.areteia-btn-primary:not(.external)').forEach(btn => {
+    document.querySelectorAll('.areteia-btn-primary:not(.external):not(#confirm-ingest-btn)').forEach(btn => {
         if (btn.dataset.bound) return;
         btn.dataset.bound = "1";
         btn.addEventListener('click', function(e) {
@@ -458,35 +477,44 @@ function initPromptPreview() {
 
 /**
  * Step 1: Ingestion Form Handling
- * Collects all checked file paths from the tree and submits the form.
+ * Intercepts the native form submit to gather selected files into the hidden input.
  */
 function initIngestionForm() {
-    const btn = document.getElementById('confirm-ingest-btn');
     const form = document.getElementById('areteia-ingest-form');
     const input = document.getElementById('selected-files-input');
+    const btn = document.getElementById('confirm-ingest-btn');
 
-    if (!btn || !form || !input) return;
+    if (!form || !input) return;
 
-    btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        
-        // Collect all checked checkboxes of type "file"
+    // Use onsubmit to overwrite any previously attached listeners on AJAX re-loads
+    form.onsubmit = function(e) {
+        // Collect checked file checkboxes
         const selectedFiles = [];
-        const fileCheckboxes = document.querySelectorAll('.tree-cb[data-type="file"]:checked');
-        
-        fileCheckboxes.forEach(cb => {
-            if (cb.value) {
-                selectedFiles.push(cb.value);
-            }
+        document.querySelectorAll('.tree-cb[data-type="file"]:checked').forEach(cb => {
+            if (cb.value) selectedFiles.push(cb.value);
         });
 
-        // Update hidden input with JSON
+        if (selectedFiles.length === 0) {
+            e.preventDefault();
+            alert('Por favor, seleccioná al menos un material para continuar.');
+            return;
+        }
+
+        // Fill the hidden input with the selection JSON before the form POSTs
         input.value = JSON.stringify(selectedFiles);
 
-        // Submit the form
-        form.submit();
-    });
+        // Show loading state gracefully, without killing the submit event
+        if (btn) {
+            setTimeout(() => {
+                btn.innerHTML = '⏳ Construyendo...';
+                btn.disabled = true;
+            }, 0);
+        }
+    };
 }
+
+
+
 
 /**
  * Real-time RAG Ingestion Poller
@@ -498,28 +526,61 @@ function initIngestionPoller(courseid) {
     
     if (!bar || !statusText || !percentText) return;
 
+    let pollCount = 0;
+    const MAX_POLLS = 900; // 30 min max (900 * 2s) — large courses need time
+
+    function redirectToSuccess() {
+        clearInterval(interval);
+        bar.style.width = '100%';
+        percentText.innerHTML = '100%';
+        statusText.innerHTML = '¡Completado!';
+        setTimeout(() => {
+            // Navigate to success state with a full page reload
+            const base = window.location.href.split('?')[0];
+            const params = new URLSearchParams(window.location.search);
+            params.set('ingested', '1');
+            params.delete('ajax');
+            window.location.href = base + '?' + params.toString();
+        }, 1500);
+    }
+
     const interval = setInterval(() => {
+        pollCount++;
+        if (pollCount > MAX_POLLS) {
+            clearInterval(interval);
+            // Redirect without ?ingested so PHP re-checks real Python status
+            const base = window.location.href.split('?')[0];
+            const p2 = new URLSearchParams(window.location.search);
+            p2.delete('ingested');
+            p2.delete('ajax');
+            window.location.href = base + '?' + p2.toString();
+            return;
+        }
+
         fetch(`ajax_status.php?course_id=${courseid}`)
             .then(r => r.json())
             .then(res => {
-                if (res.status === 'success' && res.data) {
+                // Reset counter — any live response means the server is still working
+                pollCount = 0;
+
+                // Case 1: active progress tracking (during build)
+                if (res.status === 'success' && res.data && typeof res.data.progress !== 'undefined') {
                     const data = res.data;
-                    
-                    // Update UI
                     const p = data.progress || 0;
                     bar.style.width = p + '%';
                     percentText.innerHTML = p + '%';
                     statusText.innerHTML = data.message || 'Procesando...';
 
-                    // If finished, wait a second and reload to show success view
                     if (p >= 100) {
-                        clearInterval(interval);
-                        setTimeout(() => {
-                            const url = new URL(window.location.href);
-                            url.searchParams.set('ingested', '1');
-                            window.location.href = url.toString();
-                        }, 1500);
+                        redirectToSuccess();
                     }
+                    return;
+                }
+
+                // Case 2: build finished, embedding_exists=true (state after reset of progress tracker)
+                if (res.embedding_exists) {
+                    redirectToSuccess();
+                    return;
                 }
             })
             .catch(err => {
