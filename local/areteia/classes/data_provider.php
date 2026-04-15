@@ -11,6 +11,9 @@ class data_provider {
     /** Allowed file extensions for RAG processing */
     private const ALLOWED_EXTS = ['pdf', 'ppt', 'pptx', 'docx', 'doc'];
 
+    /** Allowed module types: only Resources, not Activities */
+    private const RESOURCE_MODULES = ['resource', 'folder', 'page', 'url', 'book', 'label', 'imscp'];
+
     /**
      * Get a summary of the course content
      * 
@@ -116,6 +119,7 @@ class data_provider {
                 foreach ($modinfo->sections[$section->section] as $cmid) {
                     $cm = $modinfo->get_cm($cmid);
                     if (!$cm->uservisible) continue;
+                    if (!in_array($cm->modname, self::RESOURCE_MODULES)) continue;
 
                     $mod_context = \context_module::instance($cm->id);
                     
@@ -249,6 +253,7 @@ class data_provider {
             foreach ($modinfo->sections[$section->section] as $cmid) {
                 $cm = $modinfo->get_cm($cmid);
                 if (!$cm->uservisible) continue;
+                if (!in_array($cm->modname, self::RESOURCE_MODULES)) continue;
 
                 $activity_node = [
                     'id'    => $cm->id,
