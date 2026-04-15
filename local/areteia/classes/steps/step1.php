@@ -90,30 +90,8 @@ class step1 {
         echo html_writer::start_tag('div', ['class' => 'areteia-fr']);
         echo html_writer::start_tag('div', ['class' => 'areteia-flbl']);
         echo 'Asignatura ' . html_writer::tag('span', 'Moodle', ['class' => 'areteia-origin']);
-        echo html_writer::tag('span', 'Confirmado', ['class' => 'sb-tag sb-ok']);
         echo html_writer::end_tag('div');
         echo html_writer::tag('div', $summary['fullname'], ['class' => 'areteia-fb fc']);
-        echo html_writer::end_tag('div');
-
-        // --- Field: Programa / Resumen ---
-        $sum_ok = optional_param('sum_ok', 0, PARAM_INT);
-        echo html_writer::start_tag('div', ['class' => 'areteia-fr']);
-        echo html_writer::start_tag('div', ['class' => 'areteia-flbl']);
-        echo 'Programa / Resumen ' . html_writer::tag('span', 'Moodle', ['class' => 'areteia-origin']);
-        $res_tag = (!empty($summary['summary']) || $sum_ok)
-            ? ['sb-tag sb-ok', 'Confirmado']
-            : ['sb-tag sb-warn', 'Verificar'];
-        echo html_writer::tag('span', $res_tag[1], ['class' => $res_tag[0]]);
-        echo html_writer::end_tag('div');
-        echo html_writer::tag('div', $summary['summary'] ?: 'Sin resumen en Moodle', ['class' => 'areteia-fb fw']);
-        echo html_writer::start_tag('div', ['class' => 'areteia-fa']);
-        $conf_url = new moodle_url($PAGE->url, ['step' => 1, 'sum_ok' => 1]);
-        echo html_writer::link($conf_url, 'Confirmar', ['class' => 'fb-btn ok', 'style' => 'text-decoration:none']);
-        echo html_writer::tag('button', 'Editar', [
-            'class'   => 'fb-btn',
-            'onclick' => "alert('Edición de resumen próximamente en el prototipo.')",
-        ]);
-        echo html_writer::end_tag('div');
         echo html_writer::end_tag('div');
 
         // --- Field: Materiales ---
