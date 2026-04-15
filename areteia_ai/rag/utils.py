@@ -66,3 +66,22 @@ def embed_text_chunks(chunks, prefix=""):
     return embeddings / (norms + 1e-10)
 
 
+
+def get_instrument_list():
+    """
+    Loads the instruments from the instruments.json file.
+    Returns a list of dicts: [{'name': '...', 'definition': '...'}]
+    """
+    import json
+    from pathlib import Path
+    
+    # Path inside the container
+    json_path = Path("/app/rag/documentos_maestros/instrumentos.json")
+    if not json_path.exists():
+        return []
+        
+    try:
+        content = json_path.read_text(encoding="utf-8")
+        return json.loads(content)
+    except Exception:
+        return []

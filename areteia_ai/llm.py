@@ -37,40 +37,115 @@ def generate_completion(prompt: str, system_prompt: str = "Eres un experto en pe
         logging.exception("Exception during DashScope call")
         return None
 
-def get_suggestions_prompt(course_summary, objective, dimensions, rag_context):
+def classify_feedback(feedback_text: str) -> str:
+    """
+    Classifies if user feedback is a valid pedagogical adjustment request.
+    Returns a JSON string matching FeedbackClassification schema.
+    """
+    system_prompt = """Eres un evaluador de entradas de usuario para una IA pedagógica.
+Tu tarea es determinar si el texto del usuario es una solicitud válida de AJUSTE o CORRECCIÓN sobre un material de evaluación (ej: 'hazlo más difícil', 'usa otro caso', 'cambia el tono').
+Si el usuario pide algo fuera de contexto (chistes, insultos, temas no educativos), marca is_valid como false.
+Responde UNICAMENTE con un JSON: {"is_valid": bool, "reason": "breve explicación si es falso"}"""
+    
+    return generate_completion(feedback_text, system_prompt)
+
+def get_suggestions_prompt(course_summary, objective, dimensions, full_context, feedback=""):
+    feedback_sect = f"\n### AJUSTES REQUERIDOS POR EL DOCENTE (Prioridad alta):\n{feedback}\n" if feedback else ""
     return f"""
-Como experto en evaluación educativa, propón 3 instrumentos de evaluación para el siguiente contexto:
+    Tu tarea es proponer 3 instrumentos de evaluación que estén perfectamente alineados con los objetivos y el contexto del curso.
 
-Contexto del Curso: {course_summary}
-Objetivo de Evaluación: {objective}
-Dimensiones: {dimensions}
+### 1. CONTEXTO GENERAL DEL CURSO:
+{course_summary}
 
-Fragmentos relevantes de materiales del curso (RAG):
-{rag_context}
+### 2. OBJETIVOS DE APRENDIZAJE (Taxonomía de Bloom):
+{objective}
 
-Formato de respuesta: JSON (lista de objetos con 'name', 'why', 'lim')
-Ejemplo: [{{"name": "...", "why": "...", "lim": "..."}}]
-Responde SOLO con el JSON.
-"""
+### 3. DIMENSIONES PEDAGÓGICAS DEFINIDAS:
+{dimensions}
 
-def get_design_prompt(chosen_instrument, objective, rag_context):
-    return f"""
-Diseña las consignas o ítems para un instrumento de evaluación del tipo: {chosen_instrument}.
+### 4. MATERIALES DEL CURSO, DIRECTRICES Y CATÁLOGO DE INSTRUMENTOS:
+{full_context}
+{feedback_sect}
 
-Objetivo: {objective}
-Materiales de referencia (RAG):
-{rag_context}
+### INSTRUCCIONES CRÍTICAS:
+1. Debes elegir exactamente 3 instrumentos de la "LISTA DE INSTRUMENTOS DISPONIBLES" proporcionada arriba. El valor de "name" en tu respuesta debe ser el NOMBRE EXACTO del catálogo.
+2. Basándote en el contexto y las directrices, justifica detalladamente por qué cada uno de estos 3 instrumentos es la mejor opción.
+3. Cada propuesta debe estar justificada pedagógicamente, mencionando cómo se alinea con el nivel de Bloom y qué directriz institucional cumple.
+4. Responde UNICAMENTE en formato JSON:
+{{
+  "suggestions": [
+    {{
+      "name": "Nombre exacto del catálogo",
+      "why": "Justificación detallada citando el contexto y la directriz aplicada.",
+      "lim": "Limitación técnica del instrumento."
+    }}
+  ]
+}}"""
 
-El diseño debe ser profesional, justificado pedagógicamente y listo para ser presentado al docente.
-Incluye instrucciones claras para el estudiante.
-"""
+def get_design_prompt(chosen_instrument, objective, full_context, feedback=""):
+    feedback_sect = f"\n### AJUSTES ESPECÍFICOS SOLICITADOS (Prioridad alta):\n{feedback}\n" if feedback else ""
+    return f"""Eres un especialista en evaluación educativa. Debes redactar el contenido técnico para un instrumento de tipo: {chosen_instrument}.
 
-def get_rubric_prompt(instrument_content, objective):
-    return f"""
-Genera una rúbrica analítica para el siguiente instrumento:
+### OBJETIVOS A EVALUAR:
+{objective}
+
+### CONTEXTO, MATERIALES Y REGLAS DE REDACCIÓN:
+{full_context}
+{feedback_sect}
+
+### REQUISITOS DE CALIDAD:
+1. Los ítems deben redactarse siguiendo fielmente las DIRECTRICES PEDAGÓGICAS (estilo, claridad, neutralidad).
+2. Debes incluir consignas que cubran los diferentes niveles de Bloom solicitados.
+3. Cada ítem debe tener asociado su nivel de Bloom y un puntaje estimado.
+4. Incluye instrucciones claras para el estudiante, basadas en el contexto del curso.
+
+### FORMATO DE RESPUESTA (JSON ÚNICAMENTE):
+{{
+  "title": "Título descriptivo",
+  "instructions": "Guía para el estudiante",
+  "items": [
+    {{
+      "text": "Contenido del ítem/pregunta",
+      "bloom_level": "NIVEL",
+      "points": 10
+    }}
+  ],
+  "justification": "Explica qué directrices específicas se aplicaron para garantizar la validez del instrumento."
+}}"""
+
+def get_rubric_prompt(instrument_content, objective, full_context, feedback=""):
+    feedback_sect = f"\n### AJUSTES EN LA RÚBRICA:\n{feedback}\n" if feedback else ""
+    return f"""Como experto en evaluación, genera una RÚBRICA ANALÍTICA para el siguiente instrumento.
+
+### INSTRUMENTO A EVALUAR:
 {instrument_content}
 
-Objetivo evaluado: {objective}
+### OBJETIVOS DE APRENDIZAJE:
+{objective}
 
-Formato sugerido: Tabla con Criterios, Niveles y Puntajes.
-"""
+### MARCO PEDAGÓGICO Y REGLAS DE RÚBRICAS:
+{full_context}
+{feedback_sect}
+
+### REQUISITOS:
+1. Define criterios claros y discriminativos basados en los materiales del curso.
+2. Los descriptores de niveles deben seguir las reglas de redacción de las DIRECTRICES PEDAGÓGICAS.
+3. Asegura una progresión lógica en los puntajes.
+
+### FORMATO DE RESPUESTA (JSON ÚNICAMENTE):
+{{
+  "title": "Rúbrica de Evaluación",
+  "criteria": [
+    {{
+      "name": "Nombre del criterio",
+      "description": "Qué se evalúa",
+      "levels": [
+        {{
+          "label": "Nivel (ej: Destacado)",
+          "score": 10,
+          "description": "Descriptor de desempeño"
+        }}
+      ]
+    }}
+  ]
+}}"""

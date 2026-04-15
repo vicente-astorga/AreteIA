@@ -4,7 +4,16 @@ import logging
 import os
 
 from rag.store import get_index_path, get_metadata_path
-# Heavy imports moved inside endpoints to avoid blocking startup
+from schemas import (
+    GenerateRequest, 
+    SuggestionsResponse, 
+    InstrumentDesign, 
+    RubricDesign,
+    FeedbackClassification
+)
+from rag.utils import get_instrument_list
+import json
+import re
 
 
 app = FastAPI(title="AreteIA AI Service")
@@ -16,7 +25,17 @@ async def startup_event():
     from rag.utils import get_model
     logging.info("Warming up embedding model (FastEmbed)...")
     get_model()
-    logging.info("Model ready.")
+    
+    # Warm up the guidelines index (course 0)
+    from rag.store import load_index
+    try:
+        logging.info("Warming up Guidelines index (course 0)...")
+        load_index(0)
+        logging.info("Guidelines ready.")
+    except Exception as e:
+        logging.warning(f"Guidelines index not found at startup: {e}")
+    
+    logging.info("Service fully ready.")
 
 class SyncRequest(BaseModel):
     course: dict = {}
@@ -32,15 +51,7 @@ class SearchRequest(BaseModel):
     course_id: int
     query: str
 
-class GenerateRequest(BaseModel):
-    course_id: int
-    step: int
-    objective: str = ""
-    summary: str = ""
-    dimensions: str = ""
-    chosen_instrument: str = ""
-    instrument_content: str = ""
-    rag_context: str = ""
+# GenerateRequest moved to schemas.py
 
 @app.get("/")
 async def root():
@@ -95,6 +106,175 @@ async def search_endpoint(request: SearchRequest):
         logging.exception("Error searching course")
         return {"status": "error", "message": str(e)}
 
+@app.get("/instruments")
+async def list_instruments():
+    """
+    Returns the full list of instruments from the master document.
+    """
+    try:
+        instruments = get_instrument_list()
+        return {"status": "success", "instruments": instruments}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@app.post("/preview")
+async def preview_endpoint(request: GenerateRequest):
+    """
+    Returns the prompts that would be sent to the LLM.
+    """
+    try:
+        prompt, system_prompt, _ = await _prepare_prompt_data(request)
+        if not prompt:
+            return {"status": "error", "message": f"Step {request.step} not supported for preview"}
+        
+        if isinstance(prompt, dict) and prompt.get("status") == "error":
+            return prompt
+
+        return {
+            "status": "success",
+            "system_prompt": system_prompt,
+            "user_prompt": prompt
+        }
+    except Exception as e:
+        logging.exception("Error in /preview")
+        return {"status": "error", "message": str(e)}
+
+
+async def _prepare_prompt_data(request: GenerateRequest):
+    """
+    Internal helper to search RAG/Guidelines and select the correct prompt templates.
+    """
+    try:
+        from llm import (
+            classify_feedback,
+            get_suggestions_prompt, 
+            get_design_prompt, 
+            get_rubric_prompt
+        )
+        from rag.search import search_course, search_guidelines
+
+        if request.feedback:
+            raw_feedback = classify_feedback(request.feedback)
+            if raw_feedback:
+                try:
+                    # Clean JSON in case LLM added markdown wrappers
+                    json_fb = re.sub(r'^```json|```$', '', raw_feedback, flags=re.MULTILINE).strip()
+                    fb_data = FeedbackClassification.parse_raw(json_fb)
+                    if not fb_data.is_valid:
+                        return {
+                            "status": "error", 
+                            "message": "Solicitud de ajuste no válida",
+                            "reason": fb_data.reason or "El comentario no parece ser una instrucción pedagógica válida."
+                        }, None, None
+                except Exception as e:
+                    logging.warning(f"Failed to parse feedback classification: {e}")
+            else:
+                logging.warning("Classification failed (LLM returned None)")
+
+        # 1. Collect all queries that need embedding for batch processing
+        queries = []
+        # Main query for guidelines and fallback RAG
+        main_query = request.objective or "evaluación educativa"
+        queries.append(main_query)
+        
+        # Specific objective queries
+        obj_list = []
+        if request.objective_json:
+            try:
+                obj_list = json.loads(request.objective_json)
+                for obj in obj_list:
+                    txt = obj.get('text', '')
+                    if txt:
+                        queries.append(txt)
+            except:
+                pass
+
+        # 2. Embed ALL queries in a single batch
+        from rag.utils import embed_text_chunks
+        all_vectors = embed_text_chunks(queries, prefix="query: ")
+        
+        # 3. Perform searches using pre-computed vectors
+        from rag.search import search_course_by_vector
+        
+        # Guidelines (only if NOT step 4)
+        guidelines_text = ""
+        if request.step != 4:
+            g_results = search_course_by_vector(0, all_vectors[0], top_k=3)
+            guidelines_text = "DIRECTRICES PEDAGÓGICAS (REGLAS GLOBALES):\n" + "\n".join([f"- {res['text']}" for res in g_results[:3]]) + "\n\n"
+
+        # Structured RAG context calculation (Course Materials)
+        structured_rag = []
+        seen_texts = set()
+        
+        vector_idx = 1
+        for obj in obj_list:
+            obj_text = obj.get('text', '')
+            bloom = obj.get('bloom', 'GENERAL')
+            if obj_text and vector_idx < len(all_vectors):
+                results = search_course_by_vector(request.course_id, all_vectors[vector_idx], top_k=2)
+                vector_idx += 1
+                fragments = []
+                for res in results:
+                    txt = res['text']
+                    if txt not in seen_texts:
+                        fragments.append(f"• \"{txt}\" (Fuente: {res.get('filename', 'Archivo desconocido')})")
+                        seen_texts.add(txt)
+                
+                if fragments:
+                    structured_rag.append(f"OBJETIVO [{bloom}]: {obj_text}\n" + "\n".join(fragments))
+
+        # Fallback for main objective if no structured fragments were found
+        if not structured_rag:
+            # Re-use the main_query vector (index 0)
+            results = search_course_by_vector(request.course_id, all_vectors[0], top_k=5)
+            fragments = []
+            for res in results:
+                txt = res['text']
+                if txt not in seen_texts:
+                    fragments.append(f"• \"{txt}\" (Fuente: {res.get('filename', 'Archivo desconocido')})")
+                    seen_texts.add(txt)
+            if fragments:
+                structured_rag.append(f"OBJETIVO GENERAL: {request.objective}\n" + "\n".join(fragments))
+
+        rag_text = "\n\n".join(structured_rag) if structured_rag else "No se encontraron fragmentos específicos en los materiales del curso."
+        full_context = f"{guidelines_text}CONTEXTO EXTRAÍDO DE MATERIALES DEL CURSO:\n{rag_text}"
+
+        # 3. Build Dimensions String (D1, D3, D4)
+        # Use granular fields if available, otherwise fallback to the concatenated string
+        dim_parts = []
+        if request.d1_content: dim_parts.append(f"Contenido: {request.d1_content}")
+        if request.d3_function: dim_parts.append(f"Función: {request.d3_function}")
+        if request.d4_modality: dim_parts.append(f"Modalidad: {request.d4_modality}")
+        
+        dimensions = "\n".join(dim_parts) if dim_parts else request.dimensions
+
+        # 4. Build prompt based on step
+        prompt = ""
+        system_prompt = "Eres un experto en pedagogía y diseño de instrumentos de evaluación."
+        schema = None
+        
+        if request.step == 4:
+            # Include the master instrument list in the context for Step 4
+            master_instruments = get_instrument_list()
+            instr_list_str = "\n".join([f"- {instr['name']}: {instr['definition'][:200]}..." for instr in master_instruments])
+            extended_context = f"{full_context}\n\nLISTA DE INSTRUMENTOS DISPONIBLES (ELIGE SOLO DE AQUÍ):\n{instr_list_str}"
+            
+            prompt = get_suggestions_prompt(request.summary, request.objective, dimensions, extended_context, request.feedback)
+            schema = SuggestionsResponse
+        elif request.step == 5:
+            prompt = get_design_prompt(request.chosen_instrument, request.objective, full_context, request.feedback)
+            schema = InstrumentDesign
+        elif request.step == 6:
+            prompt = get_rubric_prompt(request.instrument_content, request.objective, full_context, request.feedback)
+            schema = RubricDesign
+        else:
+            return None, None, None
+
+        return prompt, system_prompt, schema
+    except Exception as e:
+        logging.exception("Error preparing prompt data")
+        return {"status": "error", "message": str(e)}, None, None
 
 @app.post("/generate")
 async def generate_endpoint(request: GenerateRequest):
@@ -102,39 +282,35 @@ async def generate_endpoint(request: GenerateRequest):
     Main generative endpoint for Steps 4, 5, and 6.
     """
     try:
-        from llm import (
-            generate_completion, 
-            get_suggestions_prompt, 
-            get_design_prompt, 
-            get_rubric_prompt
-        )
-        from rag.search import search_course
-
-        prompt = ""
-        # 1. Fetch RAG context if not provided
-        rag_text = request.rag_context
-        if not rag_text and request.objective:
-            results = search_course(request.course_id, request.objective)
-            # Only use top 2 to save tokens
-            rag_text = "\n".join([f"- {res['text']}" for res in results[:2]])
-
-        # 2. Build prompt based on step
-        if request.step == 4:
-            prompt = get_suggestions_prompt(request.summary, request.objective, request.dimensions, rag_text)
-        elif request.step == 5:
-            prompt = get_design_prompt(request.chosen_instrument, request.objective, rag_text)
-        elif request.step == 6:
-            prompt = get_rubric_prompt(request.instrument_content, request.objective)
-        else:
-            return {"status": "error", "message": f"Step {request.step} not supported for generation"}
-
-        # 3. Call LLM
-        response_text = generate_completion(prompt)
+        from llm import generate_completion
         
-        if response_text:
-            return {"status": "success", "output": response_text}
-        else:
+        prompt, system_prompt, schema = await _prepare_prompt_data(request)
+        
+        if not prompt:
+            return {"status": "error", "message": f"Step {request.step} not supported for generation"}
+        
+        if isinstance(prompt, dict) and prompt.get("status") == "error":
+            return prompt
+
+        # 4. Call LLM
+        response_text = generate_completion(prompt, system_prompt)
+        
+        if not response_text:
             return {"status": "error", "message": "AI generation failed"}
+
+        # 5. Parse and Validate JSON
+        try:
+            clean_json = re.sub(r'^```json|```$', '', response_text, flags=re.MULTILINE).strip()
+            validated_data = schema.parse_raw(clean_json)
+            return {"status": "success", "output": validated_data.dict()}
+        except Exception as e:
+            logging.exception("Validation failed for LLM output")
+            # If validation fails, we try to return the raw text with a warning or just error
+            return {
+                "status": "error", 
+                "message": "La IA generó un formato no válido. Por favor, intenta de nuevo o ajusta tu petición.",
+                "details": str(e)
+            }
 
     except Exception as e:
         logging.exception("Error in /generate")
@@ -150,6 +326,17 @@ def check_status(course_id: int):
         if course_id in INGESTION_PROGRESS:
             return {"status": "success", "data": INGESTION_PROGRESS[course_id]}
             
+        index_path = get_index_path(course_id)
+        exists = os.path.exists(index_path)
+        chunks = 0
+        if exists:
+            try:
+                with open(get_metadata_path(course_id), "r") as f:
+                    meta = json.load(f)
+                    chunks = meta.get("chunks", 0)
+            except:
+                pass
+
         return {
             "status": "success",
             "data": {
