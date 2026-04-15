@@ -23,7 +23,7 @@ $action = optional_param('action', 'lib', PARAM_ALPHANUMEXT);
 $step   = optional_param('step', -1, PARAM_INT); // -1 to detect if not provided
 
 // Allow server-side redirect actions to bypass tab validation
-$server_actions = ['sync', 'ingest', 'export', 'delete_rag'];
+$server_actions = ['sync', 'ingest', 'export', 'delete_rag', 'preview'];
 if (!isset(\local_areteia\step_renderer::ACTIONS[$action]) && !in_array($action, $server_actions)) {
     $action = 'lib';
 }
@@ -126,7 +126,7 @@ try {
         die();
     }
 
-} catch (Exception $e) {
+} catch (\Throwable $e) {
     if ($is_ajax) {
         ob_end_clean();
         echo 'Error: ' . $e->getMessage();

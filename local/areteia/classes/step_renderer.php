@@ -81,6 +81,9 @@ class step_renderer {
         }
 
         echo \html_writer::end_tag('div'); // card
+
+        // CSS/JS Handler for AI Prompt Preview
+        self::render_ai_preview_handler($id);
     }
 
     /**
@@ -218,4 +221,44 @@ class step_renderer {
         echo \html_writer::end_tag('div');
     }
 
+    /**
+     * Render the "Ver Prompt" button.
+     */
+    public static function render_preview_button(int $step): string {
+        return \html_writer::tag('button', '👁️ Ver Prompt', [
+            'type'        => 'button',
+            'class'       => 'areteia-btn areteia-btn-preview',
+            'data-p-step' => $step,
+            'title'       => 'Ver el diseño del prompt que se enviará a la IA'
+        ]);
+    }
+
+    /**
+     * Render the JS/CSS handler and modal for prompt preview.
+     */
+    private static function render_ai_preview_handler(int $courseid): void {
+        echo '
+        <div id="prompt-preview-overlay" class="areteia-preview-overlay">
+            <div class="areteia-preview-card">
+                <div class="areteia-preview-header">
+                    <div class="areteia-preview-title">✨ Previsualización del Prompt</div>
+                    <button class="areteia-preview-close" onclick="closePromptPreview()">&times;</button>
+                </div>
+                <div class="areteia-preview-body">
+                    <div class="areteia-preview-section">
+                        <span class="areteia-preview-label">SYSTEM PROMPT (Rol)</span>
+                        <div id="preview-system-content" class="areteia-preview-content"></div>
+                    </div>
+                    <div class="areteia-preview-section">
+                        <span class="areteia-preview-label">USER PROMPT (Instrucciones y Contexto)</span>
+                        <div id="preview-user-content" class="areteia-preview-content"></div>
+                    </div>
+                </div>
+                <div class="areteia-preview-footer">
+                    <button class="btn-copy-prompt" onclick="copyPromptToClipboard()">📋 Copiar Prompt Completo</button>
+                </div>
+            </div>
+        </div>
+        ';
+    }
 }

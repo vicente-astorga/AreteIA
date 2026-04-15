@@ -11,6 +11,8 @@ document.addEventListener("click", e => {
     const link = e.target.closest("a.opt, a.s0-card, a.sug-card, a.areteia-btn, a.fb-btn, a.areteia-dot");
     if (!link || link.classList.contains("external")) return;
 
+    e.preventDefault();
+
     // Confirmation dialog (before fetch)
     if (link.dataset.confirm && !confirm(link.dataset.confirm)) {
         e.preventDefault();
@@ -20,52 +22,48 @@ document.addEventListener("click", e => {
     const url = new URL(link.href);
     url.searchParams.set("ajax", "1");
 
-    // Auto-capture the objective textarea if present (Step 3)
-    const d2Area = document.querySelector('textarea[name="d2"]');
-    if (d2Area) {
-        url.searchParams.set("d2", d2Area.value);
+    // Auto-capture the objective state for Step 3
+    captureStep3State(url);
+
+    // Capture feedback for iterative adjustment (Steps 4, 5, 6)
+    const feedbackArea = document.querySelector('textarea[name="feedback"]');
+    if (feedbackArea && link.dataset.adjust === "1") {
+        url.searchParams.set("feedback", feedbackArea.value.trim());
     }
 
     // Capture material selection in Step 1 if starting ingestion
-    const options = { method: 'GET' };
-    if (url.searchParams.get("action") === "ingest") {
-        const checkedFiles = Array.from(document.querySelectorAll('.tree-cb[data-type="file"]:checked'))
-            .map(cb => cb.value);
-        
-        if (checkedFiles.length === 0) {
-            alert("Por favor, selecciona al menos un material para continuar.");
-            e.preventDefault();
-            const primaryBtn = document.querySelector('.areteia-btn-primary.is-loading');
-            if (primaryBtn) primaryBtn.classList.remove('is-loading'); // Reset loading
-            return;
-        }
-
-        // We use POST to avoid URL length limits with many file paths
+    // Determine method and body
+    let options = { method: 'GET' };
+    
+    if (url.searchParams.has("d2_json") || url.searchParams.get("action") === "ingest") {
         options.method = 'POST';
         options.headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
         
-        // Construct form data
         const body = new URLSearchParams();
-        body.append('selected_files', JSON.stringify(checkedFiles));
-        // Also keep other params
         url.searchParams.forEach((val, key) => body.append(key, val));
         options.body = body.toString();
+        
+        // When using POST, the request URL itself should be clean of the payload params 
+        // to avoid clashing or length limits, but index.php needs action/step/id in GET often.
     }
 
     fetch(url, options).then(r => {
         if (!r.ok) throw new Error("Server error " + r.status);
-        // Clean URL for browser history (remove ajax param)
         const finalUrl = new URL(r.url);
         finalUrl.searchParams.delete("ajax");
-        // Don't push selected_files to history
+        
+        const isStepChange = finalUrl.searchParams.get("step") !== new URL(location.href).searchParams.get("step");
         window.history.pushState({}, "", finalUrl.toString());
-        return r.text();
-    }).then(html => {
-        document.getElementById("areteia-main").innerHTML = html;
-        // Scroll to top on step change
-        if (url.searchParams.has("step") && url.searchParams.get("step") !== new URL(location.href).searchParams.get("step")) {
+        return r.text().then(html => ({ html, isStepChange }));
+    }).then(({ html, isStepChange }) => {
+        const main = document.getElementById("areteia-main");
+        if (isStepChange || !document.getElementById("d2-container")) {
+            main.innerHTML = html;
             window.scrollTo({ top: 0, behavior: "smooth" });
+        } else {
+            surgicalUpdate(html);
         }
+        
         initStep3Reactivity();
         initGenerativeLoading();
         initTreeCheckboxes();
@@ -174,21 +172,29 @@ function updateParentStates(startCb) {
 }
 
 /**
- * Step 3 reactivity: enable the "next" button only when
- * all 3 pill dimensions are selected AND the objective textarea is filled.
+ * Step 3 reactivity: Handles dynamic objective form and enables the "next" button.
  */
 function initStep3Reactivity() {
     const btn = document.getElementById("next-step-btn");
-    const d2 = document.querySelector('textarea[name="d2"]');
+    const container = document.getElementById("d2-container");
+    const list = document.getElementById("objectives-list");
+    const addBtn = document.getElementById("add-objective-btn");
 
-    if (!btn || !d2) return;
+    if (!btn || !container) return;
 
     const updateBtn = () => {
-        const hasD2 = d2.value.trim().length > 0;
-        const activeOpts = document.querySelectorAll(".opt.main").length;
-        const expectedOpts = 3;
+        const rows = document.querySelectorAll('.objective-row');
+        let hasValidObjective = false;
+        
+        rows.forEach(row => {
+            const text = row.querySelector('.objective-text-input').value.trim();
+            if (text.length > 0) hasValidObjective = true;
+        });
 
-        if (hasD2 && activeOpts >= expectedOpts) {
+        const activeOpts = document.querySelectorAll(".opt.main").length;
+        const expectedOpts = 3; // D1, D3, D4
+
+        if (hasValidObjective && activeOpts >= expectedOpts) {
             btn.classList.remove("disabled");
             btn.style.opacity = "1";
             btn.style.cursor = "pointer";
@@ -201,7 +207,79 @@ function initStep3Reactivity() {
         }
     };
 
-    d2.addEventListener("input", updateBtn);
+    // Objective form interactions
+    if (addBtn && !addBtn.dataset.bound) {
+        addBtn.dataset.bound = "1";
+        addBtn.addEventListener('click', () => {
+            const count = document.querySelectorAll('.objective-row').length;
+            const firstRow = document.querySelector('.objective-row');
+            if (!firstRow) return;
+
+            const newRow = firstRow.cloneNode(true);
+            newRow.dataset.index = count;
+            
+            // Clear values
+            const select = newRow.querySelector('select');
+            const input = newRow.querySelector('input');
+            select.value = "";
+            input.value = "";
+            
+            list.appendChild(newRow);
+            
+            // Re-bind listeners
+            bindRowListeners(newRow);
+            updateBtn();
+        });
+    }
+
+    const triggerAutoSave = debounce(() => {
+        // Only trigger if we are still on Step 3
+        if (!document.getElementById("d2-container")) return;
+
+        const url = new URL(window.location.href);
+        url.searchParams.set("ajax", "1");
+        captureStep3State(url);
+
+        fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams(url.searchParams).toString()
+        }).then(r => r.text()).then(html => {
+            surgicalUpdate(html, true); // true = requested by auto-save
+        });
+    }, 2000);
+
+    const bindRowListeners = (row) => {
+        const input = row.querySelector('.objective-text-input');
+        const select = row.querySelector('.objective-bloom-select');
+        const removeBtn = row.querySelector('.remove-objective-btn');
+
+        input.addEventListener('input', () => {
+            updateBtn();
+            triggerAutoSave();
+        });
+        select.addEventListener('change', () => {
+            updateBtn();
+            triggerAutoSave();
+        });
+        
+        if (removeBtn) {
+            removeBtn.addEventListener('click', () => {
+                if (document.querySelectorAll('.objective-row').length > 1) {
+                    row.remove();
+                    updateBtn();
+                    triggerAutoSave();
+                } else {
+                    input.value = "";
+                    select.value = "";
+                    updateBtn();
+                    triggerAutoSave();
+                }
+            });
+        }
+    };
+
+    document.querySelectorAll('.objective-row').forEach(bindRowListeners);
     updateBtn();
 }
 
@@ -302,7 +380,81 @@ document.addEventListener("DOMContentLoaded", () => {
     initTreeCheckboxes();
     initRagSearchTest();
     initIngestionForm();
+    initPromptPreview();
 });
+
+/**
+ * AI Prompt Preview Logic
+ */
+function initPromptPreview() {
+    // 1. Modal Close logic
+    window.closePromptPreview = function() {
+        const overlay = document.getElementById("prompt-preview-overlay");
+        if (overlay) overlay.classList.remove("active");
+    };
+
+    // 2. Copy logic
+    window.copyPromptToClipboard = function() {
+        const system = document.getElementById("preview-system-content").innerText;
+        const user = document.getElementById("preview-user-content").innerText;
+        const full = "SYSTEM PROMPT:\n" + system + "\n\nUSER PROMPT:\n" + user;
+        
+        navigator.clipboard.writeText(full).then(() => {
+            const btn = document.querySelector(".btn-copy-prompt");
+            if (btn) {
+                const oldText = btn.innerText;
+                btn.innerText = "✅ ¡Copiado!";
+                setTimeout(() => btn.innerText = oldText, 2000);
+            }
+        });
+    };
+
+    // 3. Global click listener for the "Ver Prompt" button
+    document.addEventListener("click", e => {
+        const btn = e.target.closest(".areteia-btn-preview");
+        if (!btn) return;
+
+        const step = btn.dataset.pStep;
+        const feedbackArea = document.querySelector('textarea[name="feedback"]');
+        const feedback = feedbackArea ? feedbackArea.value : "";
+        
+        btn.innerHTML = "⏳ Cargando...";
+        btn.style.opacity = "0.7";
+
+        const url = new URL(window.location.href);
+        url.searchParams.set("action", "preview");
+        url.searchParams.set("p_step", step);
+        url.searchParams.set("feedback", feedback);
+        url.searchParams.set("ajax", "1");
+
+        fetch(url).then(r => r.json()).then(res => {
+            btn.innerHTML = "👁️ Ver Prompt";
+            btn.style.opacity = "1";
+            
+            if (res.status === "success") {
+                const sysContent = document.getElementById("preview-system-content");
+                const userContent = document.getElementById("preview-user-content");
+                const overlay = document.getElementById("prompt-preview-overlay");
+
+                if (sysContent) sysContent.innerText = res.system_prompt;
+                if (userContent) userContent.innerText = res.user_prompt;
+                if (overlay) overlay.classList.add("active");
+            } else {
+                alert("Error: " + (res.message || "No se pudo obtener el prompt"));
+            }
+        }).catch(err => {
+            btn.innerHTML = "👁️ Ver Prompt";
+            btn.style.opacity = "1";
+            console.error(err);
+            alert("Error de conexión con el servicio de IA.");
+        });
+    });
+
+    // Close on ESC
+    document.addEventListener("keydown", e => {
+        if (e.key === "Escape") closePromptPreview();
+    });
+}
 
 /**
  * Step 1: Ingestion Form Handling
@@ -376,5 +528,87 @@ function initIngestionPoller(courseid) {
     }, 2000);
 }
 
+
+/**
+ * Surgical update: updates only the parts of Step 3 that changed.
+ * Prevents focus loss and visual 'flashes'.
+ */
+function surgicalUpdate(html, isAutoSave = false) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+
+    // Containers to check for updates
+    const targets = [
+        'd1-container', 'd3-container', 'd4-container',
+        'rag-feedback-container', 'next-step-btn'
+    ];
+
+    targets.forEach(id => {
+        const oldEl = document.getElementById(id);
+        let newEl = doc.getElementById(id);
+        
+        // Special case for next-step-btn which might be inside a list
+        if (!newEl) newEl = doc.querySelector(`#${id}`);
+
+        if (oldEl && newEl) {
+            // Avoid flashing if content is identical
+            if (oldEl.innerHTML === newEl.innerHTML) return;
+
+            // Visual transition for RAG feedback to make it feel alive
+            if (id === 'rag-feedback-container') {
+                oldEl.style.opacity = '0.5';
+                setTimeout(() => {
+                    oldEl.innerHTML = newEl.innerHTML;
+                    oldEl.style.opacity = '1';
+                }, 100);
+            } else {
+                oldEl.innerHTML = newEl.innerHTML;
+            }
+        }
+    });
+
+    // We specifically do NOT update #objectives-list during surgical updates
+    // to preserve focus and cursor position while typing.
+    // The state is already saved on server via the POST payload.
+}
+
+/**
+ * Utility: Capture Step 3 objectives into a URL object.
+ */
+function captureStep3State(url) {
+    const d2Container = document.getElementById('d2-container');
+    if (!d2Container) return;
+
+    const rows = document.querySelectorAll('.objective-row');
+    let combinedText = "";
+    let structured = [];
+
+    rows.forEach(row => {
+        const bloom = row.querySelector('.objective-bloom-select').value;
+        const text = row.querySelector('.objective-text-input').value.trim();
+        
+        // Always save to JSON to preserve UI state (fix: incluso si el texto está vacío)
+        structured.push({ bloom, text });
+        
+        // Only add to combined text for AI if there is content
+        if (text) {
+            combinedText += (bloom ? `[${bloom}] ` : "") + text + "\n";
+        }
+    });
+
+    url.searchParams.set("d2", combinedText.trim());
+    url.searchParams.set("d2_json", JSON.stringify(structured));
+}
+
+/**
+ * Utility: Debounce function to limit execution frequency.
+ */
+function debounce(func, wait) {
+    let timeout;
+    return function(...args) {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => func.apply(this, args), wait);
+    };
+}
 
 

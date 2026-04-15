@@ -58,53 +58,106 @@ class step3 {
 
         // D1: Tipo de contenido
         self::render_dimension(
+            'd1-container',
             'Dimensión 1 — Tipo de contenido',
             '¿Qué tipo de contenido es el foco principal?',
-            ['Factual', 'Conceptual', 'Procedimental', 'Actitudinal'],
+            [
+                'Factual' => 'Hechos, datos, acontecimientos, situaciones concretas objetivas y verificables.',
+                'Conceptual' => 'Conceptos, principios y teorías.',
+                'Procedimental' => 'Acciones, pasos ordenados, técnicas, estrategias.',
+                'Actitudinal' => 'Valores, normas, creencias, actitudes.'
+            ],
             'd1', $d1, $step_params, $is_locked
         );
 
-        // D2: Objetivo (textarea)
-        echo html_writer::start_tag('div', ['class' => 'areteia-dim']);
-        echo html_writer::tag('div', 'Dimensión 2 — Objetivo de evaluación', ['class' => 'dlbl']);
+        // D2: Objetivo (Dynamic Form)
+        echo html_writer::start_tag('div', ['class' => 'areteia-dim', 'id' => 'd2-container']);
+        echo html_writer::start_tag('div', ['style' => 'display:flex; align-items:center; margin-bottom:12px;']);
+        echo html_writer::tag('div', 'Dimensión 2 — Objetivo de evaluación', ['class' => 'dlbl', 'style' => 'margin-bottom:0;']);
+        echo self::render_tooltip('TAXONOMÍA DE BLOOM (para redactar los objetivos)', 'Utiliza estos niveles para definir la profundidad del aprendizaje esperado.');
+        echo html_writer::end_tag('div');
+
         echo html_writer::tag('div',
-            'Formulá el objetivo: ¿qué querés saber si pueden hacer?',
+            'Formulá uno o más objetivos: ¿qué querés saber si pueden hacer?',
             ['class' => 'dq', 'style' => 'font-weight:bold; margin-bottom:10px;']
         );
-        echo html_writer::tag('div',
-            '«Quiero saber si pueden [verbo] [contenido] [condiciones]»',
-            ['class' => 'otpl', 'style' => 'background:#e6f1fb; padding:15px; border-radius:8px; border:1px solid #85b7eb; color:#185fa5; margin-bottom:10px;']
-        );
-        $ta_attrs = [
-            'name'        => 'd2',
-            'class'       => 'form-control w-100 mb-2',
-            'placeholder' => 'Escribe aquí el objetivo...',
-            'rows'        => 3,
-        ];
-        if ($is_locked) {
-            $ta_attrs['readonly'] = 'readonly';
+
+        echo html_writer::start_tag('div', ['id' => 'objectives-list', 'class' => 'mb-3']);
+        
+        $d2_json = session_manager::get('d2_json', '');
+        $objectives = [];
+        if (!empty($d2_json)) {
+            // Fix: Moodle optional_param might return slashed quotes even with PARAM_RAW
+            $decoded = json_decode($d2_json, true);
+            if ($decoded === null) {
+                $decoded = json_decode(stripslashes($d2_json), true);
+            }
+            $objectives = $decoded ?: [];
         }
-        echo html_writer::tag('textarea', $d2, $ta_attrs);
+        
+        // At least one empty row if none exists
+        if (empty($objectives)) {
+            $objectives[] = ['bloom' => '', 'text' => $d2]; // Fallback to old d2 if it was a simple string
+        }
+
+        $bloom_options = [
+            'RECORDAR' => 'Memorizar información, reconocer datos, ideas o principios.',
+            'ENTENDER' => 'Comprender el significado de la información, explicar conceptos e interpretar hechos.',
+            'APLICAR' => 'Utilizar el conocimiento adquirido en situaciones nuevas o prácticas.',
+            'ANALIZAR' => 'Descomponer la información en partes, identificar motivos o causas y organizar ideas.',
+            'EVALUAR' => 'Justificar una postura, emitir juicios de valor sobre información y verificar el valor de la evidencia.',
+            'CREAR' => 'Combinar elementos para formar un todo coherente o generar nuevos productos o ideas.'
+        ];
+
+        foreach ($objectives as $idx => $obj) {
+            echo self::render_objective_row($idx, $obj, $bloom_options, $is_locked);
+        }
+        
+        echo html_writer::end_tag('div');
+
+        if (!$is_locked) {
+            echo html_writer::tag('button', '＋ Añadir otro objetivo', [
+                'type' => 'button',
+                'id' => 'add-objective-btn',
+                'class' => 'add-objective-btn'
+            ]);
+        }
+
+        // Hidden input for the final d2 content (the combined string)
+        echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'd2', 'value' => $d2]);
+        // Hidden input for the JSON state
+        echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'd2_json', 'value' => $d2_json]);
+
         echo html_writer::end_tag('div');
 
         // D3: Función
         self::render_dimension(
+            'd3-container',
             'Dimensión 3 — Función de la evaluación',
             null,
-            ['Diagnóstica', 'Formativa', 'Sumativa'],
+            [
+                'Diagnóstica' => 'Actividades que se llevan a cabo antes de iniciar el proceso de enseñanza-aprendizaje a fin de conocer las competencias, intereses y/o motivaciones.',
+                'Formativa' => 'Proceso continuo y sistemático que ocurre durante el aprendizaje para monitorear el progreso del alumnado.',
+                'Sumativa' => 'Proceso sistemático aplicado al final de un período de enseñanza para verificar los aprendizajes alcanzados.'
+            ],
             'd3', $d3, $step_params, $is_locked
         );
 
         // D4: Modalidad
         self::render_dimension(
+            'd4-container',
             'Dimensión 4 — Modalidad',
             null,
-            ['Individual', 'Grupal/Colaborativa', 'Pares (Peer)'],
+            [
+                'Individual' => 'Proceso sistemático para medir competencias, rendimiento, habilidades y potencial de una sola persona.',
+                'Grupal/Colaborativa' => 'Trabajo conjunto en la resolución de tareas asignadas para optimizar el propio aprendizaje y el de los otros miembros.'
+            ],
             'd4', $d4, $step_params, $is_locked,
             'border-bottom:none; padding-bottom:0;'
         );
 
         // AI Feedback / RAG
+        echo html_writer::start_tag('div', ['id' => 'rag-feedback-container']);
         if ($show_ai && !empty($d2)) {
             self::render_rag_feedback($id, $d2);
         } else if ($show_ai) {
@@ -121,6 +174,7 @@ class step3 {
             );
             echo html_writer::end_tag('div');
         }
+        echo html_writer::end_tag('div'); // #rag-feedback-container
 
         // Navigation
         $prev_url = new moodle_url($PAGE->url, array_merge($step_params, ['step' => 2]));
@@ -148,12 +202,13 @@ class step3 {
     // ------------------------------------------------------------------
 
     /**
-     * Render a dimension with pill options.
+     * Render a dimension with pill options and tooltips.
      */
     private static function render_dimension(
+        string $id,
         string $label,
         ?string $question,
-        array $options,
+        array $options, // key => description
         string $param_name,
         string $current_value,
         array $step_params,
@@ -162,7 +217,7 @@ class step3 {
     ): void {
         global $PAGE;
 
-        $attrs = ['class' => 'areteia-dim'];
+        $attrs = ['class' => 'areteia-dim', 'id' => $id];
         if ($extra_style) {
             $attrs['style'] = $extra_style;
         }
@@ -177,13 +232,79 @@ class step3 {
         }
 
         echo html_writer::start_tag('div', ['class' => 'opts', 'style' => 'display:flex; gap:10px; flex-wrap:wrap;']);
-        foreach ($options as $o) {
+        foreach ($options as $o => $desc) {
             $active = ($current_value == $o) ? 'main' : '';
             $url    = new moodle_url($PAGE->url, array_merge($step_params, [$param_name => $o]));
+            
+            echo html_writer::start_tag('div', ['style' => 'display:flex; align-items:center;']);
             lock_manager::render_pill($o, $url, "opt $active", $is_locked);
+            echo self::render_tooltip($o, $desc);
+            echo html_writer::end_tag('div');
         }
         echo html_writer::end_tag('div');
         echo html_writer::end_tag('div');
+    }
+
+    /**
+     * Utility to render a custom CSS tooltip.
+     */
+    private static function render_tooltip(string $title, string $text): string {
+        $out = html_writer::start_tag('div', ['class' => 'areteia-tooltip-container']);
+        $out .= html_writer::tag('i', 'i', ['class' => 'areteia-info-icon']);
+        $out .= html_writer::tag('span', $text, ['class' => 'areteia-tooltip-text']);
+        $out .= html_writer::end_tag('div');
+        return $out;
+    }
+
+    /**
+     * Render a single row for the dynamic objective form.
+     */
+    private static function render_objective_row(int $index, array $data, array $bloom_options, bool $is_locked): string {
+        $bloom = $data['bloom'] ?? '';
+        $text = $data['text'] ?? '';
+
+        $out = html_writer::start_tag('div', ['class' => 'objective-row', 'data-index' => $index]);
+        
+        // Bloom Select
+        $select_attrs = [
+            'class' => 'objective-bloom-select',
+            'data-field' => 'bloom'
+        ];
+        if ($is_locked) $select_attrs['disabled'] = 'disabled';
+        
+        $out .= html_writer::start_tag('select', $select_attrs);
+        $out .= html_writer::tag('option', 'Taxonomía...', ['value' => '']);
+        foreach ($bloom_options as $key => $desc) {
+            $opt_attrs = ['value' => $key];
+            if ($bloom === $key) {
+                $opt_attrs['selected'] = 'selected';
+            }
+            $out .= html_writer::tag('option', $key, $opt_attrs);
+        }
+        $out .= html_writer::end_tag('select');
+
+        // Objective Text
+        $input_attrs = [
+            'type' => 'text',
+            'class' => 'objective-text-input',
+            'placeholder' => 'Define el objetivo aquí...',
+            'value' => $text,
+            'data-field' => 'text'
+        ];
+        if ($is_locked) $input_attrs['readonly'] = 'readonly';
+        $out .= html_writer::empty_tag('input', $input_attrs);
+
+        // Delete button
+        if (!$is_locked) {
+            $out .= html_writer::tag('button', '✕', [
+                'type' => 'button',
+                'class' => 'remove-objective-btn',
+                'title' => 'Eliminar objetivo'
+            ]);
+        }
+        
+        $out .= html_writer::end_tag('div');
+        return $out;
     }
 
     /**

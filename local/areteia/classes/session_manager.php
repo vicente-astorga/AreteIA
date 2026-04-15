@@ -18,12 +18,12 @@ class session_manager {
     /** Small parameters persisted from URL → SESSION on every request. */
     private const PARAMS = [
         'use_moodle', 'path', 'ingested', 'sum_ok',
-        'd1', 'd2', 'd3', 'd4',
+        'd1', 'd2', 'd2_json', 'd3', 'd4',
         'sel_sug', 'instrument', 'exported', 'cmid',
     ];
 
     /** Dimensions whose change triggers cascading invalidation. */
-    private const DIMENSIONS = ['use_moodle', 'path', 'd1', 'd2', 'd3', 'd4'];
+    private const DIMENSIONS = ['use_moodle', 'path', 'd1', 'd2', 'd2_json', 'd3', 'd4'];
 
     /** Keys cleared when any dimension changes. */
     private const DOWNSTREAM = ['s_sugs', 'sel_sug', 'instrument', 'inst_content', 'rubric_content'];
@@ -56,7 +56,7 @@ class session_manager {
         // --- 1. Detect if any dimension changed vs session ---
         $dim_changed = false;
         foreach (self::DIMENSIONS as $dim) {
-            $type = ($dim === 'd2') ? PARAM_RAW : PARAM_TEXT;
+            $type = ($dim === 'd2' || $dim === 'd2_json') ? PARAM_RAW : PARAM_TEXT;
             $val  = optional_param($dim, null, $type);
             if ($val !== null && isset($SESSION->areteia->$dim)) {
                 $val_clean  = trim(str_replace("\r\n", "\n", (string)$val));
@@ -98,7 +98,7 @@ class session_manager {
 
         // --- 5. Persist small URL params → SESSION ---
         foreach (self::PARAMS as $p) {
-            $type = ($p === 'd2') ? PARAM_RAW : PARAM_TEXT;
+            $type = ($p === 'd2' || $p === 'd2_json') ? PARAM_RAW : PARAM_TEXT;
             $val  = optional_param($p, null, $type);
             if ($val !== null) {
                 $SESSION->areteia->$p = $val;

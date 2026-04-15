@@ -57,9 +57,10 @@ class step4 {
             $sugs = @json_decode($s_sugs_raw, true) ?: [];
         }
 
-        // Generate suggestions via AI if requested and none cached
-        if ($do_gen && empty($sugs)) {
-            $sugs = self::generate_suggestions($id, $d2, $d1, $d3, $d4, $summary);
+        // Generate suggestions via AI if requested
+        if ($do_gen) {
+            $feedback = optional_param('feedback', '', PARAM_TEXT);
+            $sugs = self::generate_suggestions($id, $d2, $d1, $d3, $d4, $summary, $feedback);
         }
 
         // Show generate button if no suggestions yet
@@ -72,25 +73,77 @@ class step4 {
                 ['style' => 'color:#777; margin-bottom:20px;']
             );
             $gen_url = new moodle_url($PAGE->url, array_merge($link_params, ['step' => 4, 'do_gen' => 1]));
+            echo html_writer::start_tag('div', ['style' => 'display:flex; justify-content:center; align-items:center; gap:10px;']);
+            echo step_renderer::render_preview_button(4);
             echo html_writer::link($gen_url, '✨ Generar Sugerencias con IA', [
                 'class'   => 'areteia-btn areteia-btn-primary',
                 'style'   => 'padding:12px 25px;',
                 'data-ia' => '1',
             ]);
             echo html_writer::end_tag('div');
+            echo html_writer::end_tag('div');
+        } else {
+            // 1) Resultados (Sugerencias)
+            echo html_writer::start_tag('div', [
+                'class' => 'sug-buttons',
+                'style' => 'display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:15px; margin-bottom:30px;',
+            ]);
+            foreach ($sugs as $s) {
+                self::render_suggestion_button($s, $sel_sug, $instrument, $link_params, $is_locked);
+            }
+            echo html_writer::end_tag('div');
+
+            // 2) Catálogo / Fallback (Seleccionar de la lista completa)
+            $all_instr_data = rag_client::get_instruments();
+            $instruments_list = ($all_instr_data && $all_instr_data->status == 'success') ? $all_instr_data->instruments : [];
+
+            if (!empty($instruments_list)) {
+                echo html_writer::start_tag('div', [
+                    'class' => 'areteia-card',
+                    'style' => 'background:#f8f9fa; border:1px dashed #d3d1c7; padding:20px; margin-bottom:20px;'
+                ]);
+                echo html_writer::tag('strong', '📂 Catálogo: Seleccionar de la lista completa', [
+                    'style' => 'display:block; margin-bottom:10px; font-size:13px; color:#666;'
+                ]);
+                
+                echo html_writer::start_tag('div', ['style' => 'display:flex; gap:10px; align-items:center;']);
+                echo html_writer::start_tag('select', [
+                    'id' => 'instrument-fallback-select',
+                    'class' => 'form-control',
+                    'style' => 'flex-grow:1;',
+                    'onchange' => "window.location.href = '" . (new moodle_url($PAGE->url, $link_params))->out(false) . "&step=4&sel_sug=' + this.value"
+                ]);
+                echo html_writer::tag('option', 'Selecciona otro instrumento del catálogo...', ['value' => '']);
+                foreach ($instruments_list as $inst) {
+                    $sel = ($sel_sug == $inst->name || (empty($sel_sug) && $instrument == $inst->name)) ? 'selected' : '';
+                    echo html_writer::tag('option', $inst->name, ['value' => $inst->name, 'selected' => $sel]);
+                }
+                echo html_writer::end_tag('select');
+                echo html_writer::end_tag('div');
+                echo html_writer::end_tag('div');
+            }
+
+            // 3) Ajustar sugerencias (Feedback area)
+            echo html_writer::start_tag('div', ['class' => 'areteia-card', 'style' => 'background:#fffcf5; border:1px solid #faeeda; padding:15px; margin-bottom:20px;']);
+            echo html_writer::tag('strong', '✨ ¿Deseas ajustar estas opciones? Pide un cambio a la IA:', ['style' => 'display:block; margin-bottom:10px; font-size:12px; color:#854f0b;']);
+            echo html_writer::tag('textarea', '', [
+                'name' => 'feedback',
+                'class' => 'form-control w-100 mb-2',
+                'placeholder' => 'Ej: Haz que las opciones sean más prácticas o enfocadas a proyectos...',
+                'rows' => 2
+            ]);
+            echo html_writer::start_tag('div', ['style' => 'display:flex; gap:10px; align-items:center;']);
+            echo step_renderer::render_preview_button(4);
+            $adjust_url = new moodle_url($PAGE->url, array_merge($link_params, ['step' => 4, 'do_gen' => 1]));
+            echo html_writer::link($adjust_url, 'Refinar Sugerencias ✨', [
+                'class' => 'areteia-btn',
+                'style' => 'font-size:12px;',
+                'data-adjust' => '1'
+            ]);
+            echo html_writer::end_tag('div');
+            echo html_writer::end_tag('div');
         }
 
-        // Suggestion cards
-        echo html_writer::start_tag('div', [
-            'class' => 'sug-grid',
-            'style' => 'display:flex; flex-direction:column; gap:10px; margin-bottom:20px;',
-        ]);
-
-        foreach ($sugs as $s) {
-            self::render_suggestion_card($s, $sel_sug, $instrument, $link_params, $is_locked);
-        }
-
-        echo html_writer::end_tag('div');
 
         // Navigation
         $prev_url = new moodle_url($PAGE->url, array_merge($link_params, ['step' => 3]));
@@ -140,39 +193,47 @@ class step4 {
         string $d1,
         string $d3,
         string $d4,
-        array $summary
+        array $summary,
+        string $feedback = ""
     ): array {
         global $OUTPUT;
 
         $res_data = rag_client::generate([
-            'course_id'  => $id,
-            'step'       => 4,
-            'objective'  => $d2,
-            'summary'    => $summary['summary'],
-            'dimensions' => "Contenido: $d1, Función: $d3, Modalidad: $d4",
+            'course_id'      => $id,
+            'step'           => 4,
+            'objective'      => $d2,
+            'objective_json' => session_manager::get('d2_json', ''),
+            'summary'        => $summary['summary'],
+            'dimensions'     => "Contenido: $d1, Función: $d3, Modalidad: $d4",
+            'd1_content'     => $d1,
+            'd3_function'    => $d3,
+            'd4_modality'    => $d4,
+            'feedback'       => $feedback
         ]);
 
         if ($res_data && $res_data->status == 'success') {
-            $raw = preg_replace('/^```json|```$/m', '', $res_data->output);
-            $sugs = @json_decode(trim($raw), true);
-            if (empty($sugs)) {
-                $sugs = @json_decode(trim($raw), true);
-            }
+            $sugs = $res_data->output->suggestions ?? [];
+            // Ensure each suggestion is an array
+            $sugs = array_map(function($item) {
+                return (array)$item;
+            }, (array)$sugs);
+
             if (!empty($sugs)) {
                 session_manager::set('s_sugs', json_encode($sugs));
             }
-            return $sugs ?: [];
+            return $sugs;
         }
 
         $err = $res_data->message ?? 'Error en el servicio de IA.';
+        if (!empty($res_data->reason)) $err .= " Motivo: " . $res_data->reason;
         echo $OUTPUT->notification('Error de IA: ' . $err, 'error');
         return [];
     }
 
     /**
-     * Render a single suggestion card.
+     * Render a suggestion selection button.
      */
-    private static function render_suggestion_card(
+    private static function render_suggestion_button(
         array $s,
         string $sel_sug,
         string $instrument,
@@ -187,53 +248,49 @@ class step4 {
         // Determine selection state
         $is_sel = '';
         if ($sel_sug === $name) {
-            $is_sel = 'is-sel';
+            $is_sel = 'areteia-btn-primary';
         } elseif (empty($sel_sug) && $is_current) {
-            $is_sel = 'is-sel';
+            $is_sel = 'areteia-btn-primary';
         }
 
-        $sug_url    = new moodle_url($PAGE->url, array_merge($link_params, ['sel_sug' => $name]));
-        $card_attrs = [
-            'href'  => $sug_url,
-            'class' => "areteia-card sug-card $is_sel",
-            'style' => 'padding:15px; border-radius:10px; text-decoration:none; color:inherit; position:relative;',
+        $sug_url    = new moodle_url($PAGE->url, array_merge($link_params, ['step' => 4, 'sel_sug' => $name]));
+        $btn_attrs = [
+            'class' => "areteia-btn $is_sel",
+            'style' => 'height:100%; display:flex; flex-direction:column; text-align:left; padding:15px; position:relative;',
         ];
 
-        // Warn if selecting a different instrument with existing generated content
-        if (!empty(session_manager::get('inst_content'))
-            && $instrument !== ''
-            && $name !== $instrument
-        ) {
-            $card_attrs['data-confirm'] = 'Si confirmas un nuevo instrumento, se borrará tu diseño y rúbrica actuales. ¿Seleccionar para explorar?';
-        }
-
         if ($is_locked) {
-            unset($card_attrs['href']);
-            $card_attrs['style'] .= ' opacity:0.6; cursor:not-allowed;';
-            echo html_writer::start_tag('div', $card_attrs);
+            $btn_attrs['style'] .= ' opacity:0.6; cursor:not-allowed;';
+            echo html_writer::start_tag('div', $btn_attrs);
         } else {
-            echo html_writer::start_tag('a', $card_attrs);
+            // Check if selection causes data loss
+            if (!empty(session_manager::get('inst_content')) && $instrument !== '' && $name !== $instrument) {
+                $btn_attrs['onclick'] = "if(confirm('Si cambias de instrumento se borrará el contenido actual. ¿Continuar?')) window.location.href='{$sug_url->out(false)}';";
+            } else {
+                $btn_attrs['onclick'] = "window.location.href='{$sug_url->out(false)}';";
+            }
+            echo html_writer::start_tag('button', $btn_attrs);
         }
 
         if ($is_current) {
-            echo html_writer::tag('span', 'Instrumento en uso', [
-                'style' => 'position:absolute; top:10px; right:10px; font-size:10px; background:#e6f4ea; color:#1e8e3e; padding:2px 8px; border-radius:10px; border:1px solid #1e8e3e;',
+            echo html_writer::tag('span', 'En uso', [
+                'style' => 'position:absolute; top:-10px; right:10px; font-size:9px; background:#e6f4ea; color:#1e8e3e; padding:1px 6px; border-radius:10px; border:1px solid #1e8e3e;',
             ]);
         }
 
-        echo html_writer::start_tag('div', ['style' => 'display:flex; justify-content:space-between; margin-bottom:5px;']);
-        echo html_writer::tag('strong', $name, ['style' => 'color:#185fa5;']);
-        echo html_writer::end_tag('div');
+        echo html_writer::tag('strong', $name, ['style' => 'margin-bottom:8px; display:block;']);
+        
+        // Official definition from master catalog (Deterministic)
+        if (!empty($s['definition'])) {
+            echo html_writer::tag('div', $s['definition'], [
+                'style' => 'font-size:12px; color:#185fa5; background:#f0f7ff; padding:8px; border-radius:6px; margin-bottom:10px; line-height:1.4;'
+            ]);
+        }
 
-        echo html_writer::tag('div',
-            '<strong>Fundamentación:</strong> ' . ($s['why'] ?? 'N/A'),
-            ['style' => 'font-size:12px; color:#555; margin-bottom:3px;']
-        );
-        echo html_writer::tag('div',
-            '<em>Limitación:</em> ' . ($s['lim'] ?? 'N/A'),
-            ['style' => 'font-size:11px; color:#999;']
-        );
+        echo html_writer::tag('div', '<strong>Fundamentación:</strong> ' . ($s['why'] ?? ''), [
+            'style' => 'font-size:11px; font-weight:normal; opacity:0.8; line-height:1.4;'
+        ]);
 
-        echo html_writer::end_tag($is_locked ? 'div' : 'a');
+        echo html_writer::end_tag($is_locked ? 'div' : 'button');
     }
 }

@@ -26,19 +26,28 @@ class step5 {
 
         $link_params = ['id' => $id];
 
-        // Generate content if requested and none cached
-        if ($do_gen && empty($inst_content)) {
+        // Generate content if requested
+        if ($do_gen) {
+            $feedback = optional_param('feedback', '', PARAM_TEXT);
             $res_data = rag_client::generate([
                 'course_id'         => $id,
                 'step'              => 5,
                 'objective'         => $d2,
+                'objective_json'    => session_manager::get('d2_json', ''),
+                'd1_content'        => session_manager::get('d1', ''),
+                'd3_function'       => session_manager::get('d3', ''),
+                'd4_modality'       => session_manager::get('d4', ''),
                 'chosen_instrument' => $instrument,
+                'feedback'          => $feedback
             ]);
             if ($res_data && $res_data->status == 'success') {
-                $inst_content = $res_data->output;
+                $inst_content = json_encode($res_data->output);
                 session_manager::set('inst_content', $inst_content);
             } else {
-                $inst_content = 'Error al generar el contenido de la IA. Por favor, reintenta.';
+                $err = $res_data->message ?? 'Error al generar el diseño.';
+                if (!empty($res_data->reason)) $err .= " Motivo: " . $res_data->reason;
+                echo $OUTPUT->notification('Error de IA: ' . $err, 'error');
+                $inst_content = '';
             }
         }
 
@@ -57,7 +66,7 @@ class step5 {
         echo html_writer::end_tag('div');
 
         if (empty($inst_content)) {
-            // Generate prompt
+            // ... same generate button ...
             echo html_writer::start_tag('div', [
                 'style' => 'text-align:center; padding:40px; border:2px dashed #eee; border-radius:15px;',
             ]);
@@ -66,23 +75,75 @@ class step5 {
                 ['style' => 'color:#777; margin-bottom:20px;']
             );
             $gen_url = new moodle_url($PAGE->url, array_merge($link_params, ['step' => 5, 'do_gen' => 1]));
+            echo html_writer::start_tag('div', ['style' => 'display:flex; justify-content:center; align-items:center; gap:10px;']);
+            echo \local_areteia\step_renderer::render_preview_button(5);
             echo html_writer::link($gen_url, '✨ Generar Diseño con IA', [
                 'class' => 'areteia-btn areteia-btn-primary',
                 'style' => 'padding:12px 25px;',
             ]);
             echo html_writer::end_tag('div');
+            echo html_writer::end_tag('div');
         } else {
-            // Show generated content
-            echo html_writer::start_tag('div', [
-                'class' => 'areteia-card',
-                'style' => 'margin-bottom:20px; line-height:1.6; position:relative;',
+            // Feedback area for iteration
+            echo html_writer::start_tag('div', ['class' => 'areteia-card', 'style' => 'background:#fffcf5; border:1px solid #faeeda; padding:15px; margin-bottom:20px;']);
+            echo html_writer::tag('strong', '¿Quieres ajustar el diseño?+', ['style' => 'display:block; margin-bottom:10px; font-size:12px; color:#854f0b;']);
+            echo html_writer::tag('textarea', '', [
+                'name' => 'feedback',
+                'class' => 'form-control w-100 mb-2',
+                'placeholder' => 'Ej: Haz que las preguntas de RECORDAR sean de selección múltiple...',
+                'rows' => 2
             ]);
-            echo html_writer::tag('p', '<strong>Propuesta de la IA:</strong>', [
-                'style' => 'margin-bottom:10px; border-bottom:1px solid #eee; padding-bottom:5px;',
+            echo html_writer::start_tag('div', ['style' => 'display:flex; gap:10px; align-items:center;']);
+            echo \local_areteia\step_renderer::render_preview_button(5);
+            $adjust_url = new moodle_url($PAGE->url, array_merge($link_params, ['step' => 5, 'do_gen' => 1]));
+            echo html_writer::link($adjust_url, 'Ajustar Diseño ✨', [
+                'class' => 'areteia-btn',
+                'style' => 'font-size:12px;',
+                'data-adjust' => '1'
             ]);
+            echo html_writer::end_tag('div');
+            echo html_writer::end_tag('div');
 
-            $formatted = format_text($inst_content, FORMAT_MARKDOWN, ['context' => $context]);
-            echo html_writer::tag('div', $formatted, ['class' => 'areteia-markdown-content']);
+            // Parse and render structured content
+            $data = json_decode($inst_content, true);
+            if (!$data || !is_array($data)) {
+                // Fallback for old markdown content if any
+                echo html_writer::start_tag('div', ['class' => 'areteia-card', 'style' => 'margin-bottom:20px;']);
+                echo format_text($inst_content, FORMAT_MARKDOWN, ['context' => $context]);
+                echo html_writer::end_tag('div');
+            } else {
+                echo html_writer::tag('h3', $data['title'] ?? 'Propuesta de Evaluación', ['style' => 'color:#185fa5; margin-bottom:15px;']);
+                
+                // Instructions
+                echo html_writer::start_tag('div', ['class' => 'areteia-note', 'style' => 'margin-bottom:20px;']);
+                echo html_writer::tag('strong', 'Instrucciones para el estudiante:', ['style' => 'display:block; margin-bottom:5px;']);
+                echo format_text($data['instructions'] ?? '', FORMAT_MARKDOWN, ['context' => $context]);
+                echo html_writer::end_tag('div');
+
+                // Items list
+                echo html_writer::start_tag('div', ['style' => 'display:flex; flex-direction:column; gap:15px; margin-bottom:20px;']);
+                foreach (($data['items'] ?? []) as $index => $item) {
+                    echo html_writer::start_tag('div', ['class' => 'areteia-card', 'style' => 'padding:15px; border-left:4px solid #185fa5;']);
+                    echo html_writer::start_tag('div', ['style' => 'display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px;']);
+                    echo html_writer::tag('span', 'Pregunta ' . ($index + 1), ['style' => 'font-weight:bold; color:#185fa5;']);
+                    echo html_writer::start_tag('div', ['style' => 'display:flex; gap:5px;']);
+                    echo html_writer::tag('span', $item['bloom_level'], ['class' => 'areteia-tag', 'style' => 'margin-bottom:0; background:#e8f0fe; color:#1a73e8; font-size:9px;']);
+                    echo html_writer::tag('span', $item['points'] . ' pts', ['class' => 'areteia-tag', 'style' => 'margin-bottom:0; background:#e6f4ea; color:#1e8e3e; font-size:9px;']);
+                    echo html_writer::end_tag('div');
+                    echo html_writer::end_tag('div');
+                    echo html_writer::tag('div', format_text($item['text'], FORMAT_MARKDOWN, ['context' => $context]));
+                    echo html_writer::end_tag('div');
+                }
+                echo html_writer::end_tag('div');
+
+                // Justification
+                if (!empty($data['justification'])) {
+                    echo html_writer::start_tag('div', ['style' => 'font-size:12px; color:#666; font-style:italic; padding:10px; background:#f9f9f9; border-radius:8px;']);
+                    echo html_writer::tag('strong', 'Justificación Pedagógica: ');
+                    echo s($data['justification']);
+                    echo html_writer::end_tag('div');
+                }
+            }
 
             // Inner nav
             echo html_writer::start_tag('div', [

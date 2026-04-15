@@ -36,8 +36,8 @@ class action_handler {
                 self::handle_export($course_id, $base_url, $is_ajax);
                 return true;
 
-            case 'delete_rag':
-                self::handle_delete_rag($course_id, $base_url, $is_ajax);
+            case 'preview':
+                self::handle_preview($course_id);
                 return true;
 
             default:
@@ -178,5 +178,37 @@ class action_handler {
             $redir->param('ajax', 1);
         }
         redirect($redir);
+    }
+
+    /**
+     * Fetch LLM prompt preview and return as JSON.
+     */
+    private static function handle_preview(int $course_id): void {
+        header('Content-Type: application/json');
+        
+        $step = optional_param('p_step', 4, PARAM_INT);
+        $feedback = optional_param('feedback', '', PARAM_TEXT);
+        
+        $summary = data_provider::get_course_summary($course_id);
+        
+        $data = [
+            'course_id'          => $course_id,
+            'step'               => $step,
+            'objective'          => session_manager::get('d2', ''),
+            'objective_json'     => session_manager::get('d2_json', ''),
+            'dimensions'         => "Contenido: " . session_manager::get('d1', '') . 
+                                   ", Función: " . session_manager::get('d3', '') . 
+                                   ", Modalidad: " . session_manager::get('d4', ''),
+            'd1_content'         => session_manager::get('d1', ''),
+            'd3_function'        => session_manager::get('d3', ''),
+            'd4_modality'        => session_manager::get('d4', ''),
+            'feedback'           => $feedback,
+            'chosen_instrument'  => session_manager::get('instrument', ''),
+            'instrument_content' => session_manager::get('inst_content', ''),
+        ];
+
+        $res = rag_client::preview_prompt($data);
+        echo json_encode($res ?: ['status' => 'error', 'message' => 'Servicio de IA no disponible']);
+        die();
     }
 }

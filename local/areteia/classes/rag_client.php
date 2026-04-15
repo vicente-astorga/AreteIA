@@ -89,12 +89,38 @@ class rag_client {
     /**
      * POST /generate — LLM generation (steps 4, 5, 6).
      *
-     * @param array $data  Arbitrary payload forwarded to the Python service
-     * @return object|null  { status, output }
+     * @param array $data
+     * @return object|null
      */
     public static function generate(array $data): ?object {
-        $response = self::post('/generate', json_encode($data), 120, 20);
+        $response = self::post('/generate', json_encode($data), 600, 30);
         return @json_decode($response);
+    }
+
+    /**
+     * POST /preview — preview LLM prompts.
+     *
+     * @param array $data
+     * @return object|null  { status, system_prompt, user_prompt }
+     */
+    public static function preview_prompt(array $data): ?object {
+        $response = self::post('/preview', json_encode($data), 60, 20);
+        return @json_decode($response);
+    }
+
+    /**
+     * GET /instruments — get the full list of instruments from the master document.
+     *
+     * @return object|null  { status, instruments: [{name, definition}] }
+     */
+    public static function get_instruments(): ?object {
+        $ch = curl_init(self::BASE . '/instruments');
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+        $raw = curl_exec($ch);
+        curl_close($ch);
+        
+        return @json_decode($raw);
     }
 
     // ------------------------------------------------------------------
