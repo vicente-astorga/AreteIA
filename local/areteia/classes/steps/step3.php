@@ -177,7 +177,7 @@ class step3 {
         echo html_writer::end_tag('div'); // #rag-feedback-container
 
         // Navigation
-        $prev_url = new moodle_url($PAGE->url, array_merge($step_params, ['step' => 2]));
+        $prev_url = new moodle_url($PAGE->url, array_merge($step_params, ['step' => 1, 'action' => 'lib']));
         $next_url = new moodle_url($PAGE->url, array_merge($step_params, ['step' => 4]));
         $can_continue = ($d1 && $d2 && $d3 && $d4);
 
