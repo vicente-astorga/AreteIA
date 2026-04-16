@@ -31,7 +31,7 @@ document.addEventListener("click", e => {
     if (url.searchParams.get("action") === "ingest") {
         const checkedFiles = Array.from(document.querySelectorAll('.tree-cb[data-type="file"]:checked'))
             .map(cb => cb.value);
-        
+
         if (checkedFiles.length === 0) {
             alert("Por favor, selecciona al menos un material para continuar.");
             e.preventDefault();
@@ -43,7 +43,7 @@ document.addEventListener("click", e => {
         // We use POST to avoid URL length limits with many file paths
         options.method = 'POST';
         options.headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
-        
+
         // Construct form data
         const body = new URLSearchParams();
         body.append('selected_files', JSON.stringify(checkedFiles));
@@ -132,8 +132,8 @@ function updateSelectionCount() {
     if (!badge) return;
 
     const count = document.querySelectorAll('.tree-cb[data-type="file"]:checked').length;
-    badge.textContent = `${count} ${count === 1 ? 'archivo seleccionado' : 'archivos seleccionados'}`;
-    
+    badge.textContent = `${count} ${count === 1 ? 'recurso seleccionado' : 'recursos seleccionados'}`;
+
     // Aesthetic: Change color if 0
     if (count > 0) {
         badge.style.background = '#28a745'; // OK green
@@ -149,15 +149,15 @@ function updateSelectionCount() {
  */
 function updateParentStates(startCb) {
     let current = startCb.closest('.tree-node').parentElement.closest('.tree-node');
-    
+
     while (current) {
         const parentCb = current.querySelector('.tree-cb');
         const siblingNodes = current.querySelectorAll(':scope > .tree-node > .tree-row .tree-cb');
-        
+
         if (siblingNodes.length > 0) {
             const checkedCount = Array.from(siblingNodes).filter(c => c.checked).length;
             const isIndeterminate = Array.from(siblingNodes).some(c => c.indeterminate);
-            
+
             if (checkedCount === 0) {
                 parentCb.checked = false;
                 parentCb.indeterminate = isIndeterminate;
@@ -213,7 +213,7 @@ function initGenerativeLoading() {
     document.querySelectorAll('.areteia-btn-primary:not(.external)').forEach(btn => {
         if (btn.dataset.bound) return;
         btn.dataset.bound = "1";
-        btn.addEventListener('click', function(e) {
+        btn.addEventListener('click', function (e) {
             if (this.classList.contains('is-loading')) {
                 e.preventDefault();
                 return;
@@ -317,11 +317,11 @@ function initIngestionForm() {
 
     btn.addEventListener('click', (e) => {
         e.preventDefault();
-        
+
         // Collect all checked checkboxes of type "file"
         const selectedFiles = [];
         const fileCheckboxes = document.querySelectorAll('.tree-cb[data-type="file"]:checked');
-        
+
         fileCheckboxes.forEach(cb => {
             if (cb.value) {
                 selectedFiles.push(cb.value);
@@ -343,7 +343,7 @@ function initIngestionPoller(courseid) {
     const bar = document.getElementById('areteia-ingestion-bar');
     const statusText = document.getElementById('areteia-ingestion-status');
     const percentText = document.getElementById('areteia-ingestion-percent');
-    
+
     if (!bar || !statusText || !percentText) return;
 
     const interval = setInterval(() => {
@@ -352,7 +352,7 @@ function initIngestionPoller(courseid) {
             .then(res => {
                 if (res.status === 'success' && res.data) {
                     const data = res.data;
-                    
+
                     // Update UI
                     const p = data.progress || 0;
                     bar.style.width = p + '%';

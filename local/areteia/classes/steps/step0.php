@@ -20,10 +20,10 @@ class step0 {
 
         $id = $ctx['id'];
 
-        echo html_writer::tag('span', 'Paso 0 — Punto de entrada', ['class' => 'areteia-tag t-ia']);
+        
         echo html_writer::tag('p', '¿Tenés tu curso cargado en Moodle?', ['class' => 'areteia-stitle']);
         echo html_writer::tag('p',
-            'AreteIA ha detectado contenido en este curso. ¿Querés importar los datos automáticamente o cargar el contexto manualmente?',
+            'AreteIA ha detectado recursos en este curso. ¿Querés importarlos automáticamente o cargarlos manualmente?',
             ['class' => 'areteia-sdesc']
         );
 
@@ -55,8 +55,8 @@ class step0 {
         $moodle_url = new moodle_url($PAGE->url, ['use_moodle' => 1]);
         [$open, $close] = lock_manager::option_tags($moodle_url, "s0-card $sel_moodle", $is_locked);
         echo $open;
-        echo html_writer::tag('strong', 'Sí, usar contenidos de Moodle');
-        echo html_writer::tag('span', 'AreteIA importará archivos, secciones y actividades automáticamente. Recomendado para este curso.');
+        echo html_writer::tag('strong', 'Si, usar recursos de Moodle');
+        echo html_writer::tag('span', 'AreteIA importará recursos automáticamente. Recomendado para este curso.');
         echo $close;
 
         // --- Manual card ---
