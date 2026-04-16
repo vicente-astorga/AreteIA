@@ -36,6 +36,10 @@ class action_handler {
                 self::handle_export($course_id, $base_url, $is_ajax);
                 return true;
 
+            case 'delete_rag':
+                self::handle_delete_rag($course_id, $base_url, $is_ajax);
+                return true;
+
             case 'preview':
                 self::handle_preview($course_id);
                 return true;
@@ -155,7 +159,7 @@ class action_handler {
         rag_client::delete($course_id);
         data_provider::delete_sync_dir($course_id);
         
-        $redir = new \moodle_url($base_url, ['step' => 0, 'action' => 'lib']);
+        $redir = new \moodle_url($base_url, ['step' => 0, 'action' => 'lib', 'force_step' => 0]);
         if ($is_ajax) {
             $redir->param('ajax', 1);
         }

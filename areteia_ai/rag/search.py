@@ -45,7 +45,6 @@ def search_course_by_vector(course_id: int, query_vector: np.ndarray, top_k=10, 
     try:
         index, metadata = load_index(course_id)
     except Exception as e:
-        import logging
         logging.warning(f"Could not load index for course {course_id}: {e}")
         return []
 
@@ -77,6 +76,5 @@ def search_guidelines(query: str, top_k=5):
     try:
         return search_course(0, query, top_k=top_k)
     except Exception as e:
-        import logging
         logging.warning(f"Guidelines index not found or error: {e}")
         return []

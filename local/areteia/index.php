@@ -58,7 +58,8 @@ $PAGE->set_heading('AreteIA — Flujo módulo docente');
 $PAGE->set_pagelayout('report');
 
 // Auto-skip Step 0 if RAG already exists (for "Crear Biblioteca" action)
-if ($action === 'lib' && $step === 0 && $id > 0) {
+$force_step = optional_param('force_step', 1, PARAM_INT); // Default to 1 to auto-skip if it exists
+if ($action === 'lib' && $step === 0 && $id > 0 && $force_step) {
     try {
         $status = \local_areteia\rag_client::status($id);
         if ($status['data'] && !empty($status['data']->embedding_exists)) {

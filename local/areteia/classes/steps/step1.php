@@ -305,9 +305,7 @@ class step1 {
                 'style' => 'margin-top:16px;',
             ]);
             echo html_writer::end_tag('div');
-
-            step_renderer::render_nav(1, $prev_url, new moodle_url($PAGE->url, ['step' => 2]), 'Continuar al paso 2 →');
-
+            step_renderer::render_nav(1, $prev_url, new moodle_url($PAGE->url, ['step' => 2, 'action' => 'eval']), 'Continuar al paso 2 →');
         } else if ($ingested == 2) {
             // Empty content
             echo html_writer::start_tag('div', [
@@ -322,9 +320,7 @@ class step1 {
                 ['style' => 'font-size:12px; line-height:1.4; margin:0;']
             );
             echo html_writer::end_tag('div');
-
-            step_renderer::render_nav(1, $prev_url, new moodle_url($PAGE->url, ['step' => 2]), 'Continuar al paso 2 →');
-
+            step_renderer::render_nav(1, $prev_url, new moodle_url($PAGE->url, ['step' => 2, 'action' => 'eval']), 'Continuar al paso 2 →');
         } else if ($ingested == 3) {
             // Processing in background — but check if it's actually already done
             $real_status_raw = \local_areteia\rag_client::status($id)['raw'];
