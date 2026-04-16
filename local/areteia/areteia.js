@@ -39,14 +39,26 @@ document.addEventListener("click", e => {
         url.searchParams.set("feedback", feedbackArea.value.trim());
     }
 
-    // Determine method and body
-    let options = { method: 'GET' };
+    // Capture material selection in Step 1 if starting ingestion
+    const options = { method: 'GET' };
     
-    // Use POST if we have a large d2_json payload (Step 3 dynamic form) or if starting material ingestion
+    // Use POST if we have a large d2_json payload (Step 3) or if starting ingestion
     if (url.searchParams.has("d2_json") || url.searchParams.get("action") === "ingest") {
+        
+        // Guard: if ingestion, ensure at least one file is selected (Step 1)
+        if (url.searchParams.get("action") === "ingest") {
+            const checkedFiles = document.querySelectorAll('.tree-cb[data-type="file"]:checked');
+            if (checkedFiles.length === 0) {
+                alert("Por favor, selecciona al menos un recurso para continuar.");
+                e.preventDefault();
+                const primaryBtn = document.querySelector('.areteia-btn-primary.is-loading');
+                if (primaryBtn) primaryBtn.classList.remove('is-loading');
+                return;
+            }
+        }
+
         options.method = 'POST';
         options.headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
-        
         const body = new URLSearchParams();
         url.searchParams.forEach((val, key) => body.append(key, val));
         options.body = body.toString();
@@ -144,8 +156,8 @@ function updateSelectionCount() {
     if (!badge) return;
 
     const count = document.querySelectorAll('.tree-cb[data-type="file"]:checked').length;
-    badge.textContent = `${count} ${count === 1 ? 'archivo seleccionado' : 'archivos seleccionados'}`;
-    
+    badge.textContent = `${count} ${count === 1 ? 'recurso seleccionado' : 'recursos seleccionados'}`;
+
     // Aesthetic: Change color if 0
     if (count > 0) {
         badge.style.background = '#28a745'; // OK green
@@ -161,7 +173,7 @@ function updateSelectionCount() {
  */
 function updateParentStates(startCb) {
     let current = startCb.closest('.tree-node').parentElement.closest('.tree-node');
-    
+
     while (current) {
         const parentCb = current.querySelector('.tree-row .tree-cb');
         
@@ -310,7 +322,7 @@ function initGenerativeLoading() {
     document.querySelectorAll('.areteia-btn-primary:not(.external):not(#confirm-ingest-btn)').forEach(btn => {
         if (btn.dataset.bound) return;
         btn.dataset.bound = "1";
-        btn.addEventListener('click', function(e) {
+        btn.addEventListener('click', function (e) {
             if (this.classList.contains('is-loading')) {
                 e.preventDefault();
                 return;
@@ -523,7 +535,7 @@ function initIngestionPoller(courseid) {
     const bar = document.getElementById('areteia-ingestion-bar');
     const statusText = document.getElementById('areteia-ingestion-status');
     const percentText = document.getElementById('areteia-ingestion-percent');
-    
+
     if (!bar || !statusText || !percentText) return;
 
     let pollCount = 0;
@@ -566,6 +578,7 @@ function initIngestionPoller(courseid) {
                 // Case 1: active progress tracking (during build)
                 if (res.status === 'success' && res.data && typeof res.data.progress !== 'undefined') {
                     const data = res.data;
+                    // Update UI
                     const p = data.progress || 0;
                     bar.style.width = p + '%';
                     percentText.innerHTML = p + '%';

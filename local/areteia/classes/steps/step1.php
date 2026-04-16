@@ -24,10 +24,10 @@ class step1 {
         $files     = $ctx['files'];
         $use_moodle = session_manager::get('use_moodle', 1);
 
-        echo html_writer::tag('span', 'Paso 1 — Contexto objetivo', ['class' => 'areteia-tag t-ia']);
+        
         echo html_writer::tag('p', 'Contexto pedagógico de la asignatura', ['class' => 'areteia-stitle']);
         echo html_writer::tag('p',
-            'Verificá la información importada de Moodle para asegurar que el RAG tenga el contexto correcto.',
+            'Verificá los recursos importados de Moodle para asegurar que la biblioteca se haya generado correctamente',
             ['class' => 'areteia-sdesc']
         );
 
@@ -36,9 +36,9 @@ class step1 {
         if ($is_locked) {
             lock_manager::render_lock_banner(
                 '🔒 Opción bloqueada',
-                'La edición está protegida porque ya avanzaste.',
+                'Esta sección está protegida porque ya avanzaste.',
                 new moodle_url($PAGE->url, ['step' => 0, 'unlock' => 2]),
-                '🔓 Desbloquear (Se borrará el progreso posterior)'
+                '🔓 Desbloquear (Se borrará el progreso)'
             );
         }
 
@@ -61,7 +61,7 @@ class step1 {
         if ($use_moodle) {
             self::render_moodle_fields($id, $summary, $files, $already_ingested, $service_down, $status_data, $prev_selected);
         } else {
-            echo $OUTPUT->notification('Carga manual no implementada en este prototipo.', 'warning');
+            echo $OUTPUT->notification('Te pedimos disculpa. La carga manual no está disponible en esta versión .', 'warning');
         }
 
         // Bottom section depends on ingestion state
@@ -89,31 +89,20 @@ class step1 {
         // --- Field: Asignatura ---
         echo html_writer::start_tag('div', ['class' => 'areteia-fr']);
         echo html_writer::start_tag('div', ['class' => 'areteia-flbl']);
-        echo 'Asignatura ' . html_writer::tag('span', 'Moodle', ['class' => 'areteia-origin']);
+        echo 'Asignatura';
         echo html_writer::end_tag('div');
         echo html_writer::tag('div', $summary['fullname'], ['class' => 'areteia-fb fc']);
         echo html_writer::end_tag('div');
 
-        // --- Field: Materiales ---
+        // --- Field: Recursos ---
         echo html_writer::start_tag('div', ['class' => 'areteia-fr']);
         echo html_writer::start_tag('div', ['class' => 'areteia-flbl']);
-        echo 'Materiales detectados ' . html_writer::tag('span', 'Moodle', ['class' => 'areteia-origin']);
-        if ($already_ingested) {
-            $chunks = $status_obj->chunks ?? 0;
-            echo html_writer::tag('span', "Verificado ($chunks fragmentos)", ['class' => 'sb-tag sb-ok']);
-        } else if ($service_down) {
-            echo html_writer::tag('span', 'Servicio no disponible', [
-                'class' => 'sb-tag sb-warn',
-                'style' => 'background:#ff9800',
-            ]);
-        } else {
-            echo html_writer::tag('span', 'Verificar', ['class' => 'sb-tag sb-warn']);
-        }
+        echo 'Recursos detectados';
         echo html_writer::end_tag('div');
 
         echo html_writer::start_tag('div', ['class' => 'areteia-fb fw']);
         if ($already_ingested) {
-            echo html_writer::tag('div', 'Embeddings detectados y persistentes.', [
+            echo html_writer::tag('div', 'Biblioteca detectada y persistente.', [
                 'class' => 'areteia-fb fw',
                 'style' => 'color:#28a745; font-weight:bold;',
             ]);
@@ -133,7 +122,7 @@ class step1 {
                 'class' => 'areteia-fb fw', 
                 'style' => 'margin-bottom:15px; display: flex; justify-content: space-between; align-items: center;'
             ]);
-            echo html_writer::tag('span', "Seleccioná los materiales para la IA:", ['style' => 'font-weight:bold;']);
+            echo html_writer::tag('span', "Seleccioná los recursos para la IA:", ['style' => 'font-weight:bold;']);
             echo html_writer::tag('span', 'Calculando...', [
                 'id' => 'selection-count-badge', 
                 'class' => 'sb-tag sb-warn',
@@ -253,21 +242,21 @@ class step1 {
                 'class' => 'areteia-card',
                 'style' => 'border-left: 5px solid #28a745; background: #f4fff4; margin-bottom:20px;',
             ]);
-            echo html_writer::tag('strong', '✨ ¡Embeddings construidos con éxito!', [
+            echo html_writer::tag('strong', '✨ Biblioteca creada con éxito!', [
                 'style' => 'color:#28a745; display:block; margin-bottom:5px;',
             ]);
             echo html_writer::tag('p',
-                'La IA ya tiene acceso a los contenidos de tu curso para darte mejores respuestas.',
+                'La IA ya tiene acceso a los recursos de tu curso para darte mejores respuestas.',
                 ['style' => 'font-size:12px; margin:0;']
             );
             echo html_writer::end_tag('div');
 
             $delete_url = new moodle_url($PAGE->url, ['step' => 1, 'action' => 'delete_rag']);
             echo html_writer::start_tag('div', ['style' => 'text-align:right; margin-bottom: 20px;']);
-            echo html_writer::link($delete_url, '🗑️ Eliminar embeddings y reiniciar', [
+            echo html_writer::link($delete_url, '🗑️ Eliminar Biblioteca y reiniciar', [
                 'class' => 'areteia-btn', 
                 'style' => 'background: #fff; color: #dc3545; border: 1px solid #dc3545;',
-                'data-confirm' => '¿Estás seguro de que deseas eliminar los embeddings procesados? Tendrás que volver a procesar los documentos si cambias de opinión.',
+                'data-confirm' => '¿Estás seguro de que deseas eliminar la biblioteca? Tendrás que volver a procesar los documentos si cambias de opinión.',
             ]);
             echo html_writer::end_tag('div');
 
@@ -355,7 +344,7 @@ class step1 {
             echo html_writer::end_tag('div'); // progress-container
 
             echo html_writer::tag('p',
-                'Este proceso es intensivo en CPU. Una vez finalizado, podrás probar el buscador semántico.',
+                'Una vez finalizado, podrás continuar con el proceso.',
                 ['style' => 'font-size:12px; line-height:1.4; margin-top:15px; color:#666;']
             );
             echo html_writer::end_tag('div');
@@ -418,11 +407,12 @@ class step1 {
 
             echo html_writer::start_tag('div', ['class' => 'areteia-nav']);
             echo html_writer::link($prev_url, '← Anterior', ['class' => 'areteia-btn']);
-            echo html_writer::tag('span', 'Paso 2 de 2', ['class' => 'areteia-ncnt']);
-            echo html_writer::tag('button', 'Confirmar y Construir Embeddings', [
-                'type'  => 'submit',
-                'id'    => 'confirm-ingest-btn',
-                'class' => 'areteia-btn areteia-btn-primary',
+            echo html_writer::tag('span', 'Paso 1 de 2', ['class' => 'areteia-ncnt']);
+            echo html_writer::tag('button', 'Confirmar y Construir Biblioteca', [
+                'type'     => 'submit',
+                'id'       => 'confirm-ingest-btn',
+                'class'    => 'areteia-btn areteia-btn-primary',
+                'data-ia'  => '1'
             ]);
             echo html_writer::end_tag('div');
 
