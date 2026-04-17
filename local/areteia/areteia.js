@@ -99,7 +99,7 @@ document.addEventListener("click", e => {
                 // For others, only append if not already present from the URL (to avoid id/step conflict)
                 const isArray = key.endsWith('[]');
                 const isRestricted = ['id', 'step', 'action'].includes(key);
-                
+
                 if (isArray || (!isRestricted && !body.has(key))) {
                     body.append(key, val);
                 }
@@ -289,7 +289,7 @@ function initStep3Reactivity() {
             btn.classList.remove("disabled");
             btn.style.opacity = "1";
             btn.style.cursor = "pointer";
-            btn.innerHTML = "Ver Sugerencias →";
+            btn.innerHTML = "Ver instrumentos recomendados →";
         } else {
             btn.classList.add("disabled");
             btn.style.opacity = "0.5";
@@ -795,7 +795,7 @@ function initInstrumentFallback() {
         fetch(url).then(r => r.text()).then(html => {
             main.innerHTML = html;
             main.style.opacity = '1';
-            
+
             // Re-initialize all UI components
             initStep3Reactivity();
             initGenerativeLoading();
@@ -804,7 +804,7 @@ function initInstrumentFallback() {
             initPromptPreview();
             initItemAdjustmentUI();
             initInstrumentFallback();
-            
+
             // Update URL in history
             const finalUrl = new URL(url);
             finalUrl.searchParams.delete("ajax");

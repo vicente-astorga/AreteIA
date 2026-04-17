@@ -34,10 +34,9 @@ class step4 {
         // Minimal params for links in this step
         $link_params = ['id' => $id];
 
-        echo html_writer::tag('span', 'Paso 4 — Sugerencias de la IA', ['class' => 'areteia-tag t-ia']);
-        echo html_writer::tag('p', 'Instrumentos recomendados', ['class' => 'areteia-stitle']);
+        echo html_writer::tag('p', 'Instrumentos sugeridos por AreteIA', ['class' => 'areteia-stitle']);
         echo html_writer::tag('p',
-            'La IA propone una batería de instrumentos justificados pedagógicamente basados en tu objetivo.',
+            'AreteIA te sugerirá un conjunto de instrumentos de evaluación justificados pedagógicamente y basados en tu(s) objetivo(s).',
             ['class' => 'areteia-sdesc']
         );
         
@@ -52,7 +51,7 @@ class step4 {
                 '🔒 Opción bloqueada',
                 'La edición está protegida porque ya avanzaste.',
                 new moodle_url($PAGE->url, ['step' => 0, 'unlock' => 2]),
-                '🔓 Desbloquear (Se borrará el progreso posterior)'
+                '🔓 Desbloquear (Se borrará el progreso)'
             );
         }
 
@@ -75,13 +74,13 @@ class step4 {
                 'style' => 'text-align:center; padding:40px; border:2px dashed #eee; border-radius:15px;',
             ]);
             echo html_writer::tag('p',
-                'Haz clic para que la IA analice tu objetivo y proponga instrumentos.',
+                'Hacé clic para que AreteIA analice tu(s) objetivo(s) y te sugiera los instrumentos de evaluación',
                 ['style' => 'color:#777; margin-bottom:20px;']
             );
             $gen_url = new moodle_url($PAGE->url, array_merge($link_params, ['step' => 4, 'do_gen' => 1]));
             echo html_writer::start_tag('div', ['style' => 'display:flex; justify-content:center; align-items:center; gap:10px;']);
             echo step_renderer::render_preview_button(4);
-            echo html_writer::link($gen_url, '✨ Generar Sugerencias con IA', [
+            echo html_writer::link($gen_url, '✨ Generar sugerencias con AreteIA', [
                 'class'   => 'areteia-btn areteia-btn-primary',
                 'style'   => 'padding:12px 25px;',
                 'data-ia' => '1',
@@ -156,7 +155,7 @@ class step4 {
 
             // 3) Ajustar sugerencias (Feedback area)
             echo html_writer::start_tag('div', ['class' => 'areteia-card', 'style' => 'background:#fffcf5; border:1px solid #faeeda; padding:15px; margin-bottom:20px;']);
-            echo html_writer::tag('strong', '✨ ¿Deseas ajustar estas opciones? Pide un cambio a la IA:', ['style' => 'display:block; margin-bottom:10px; font-size:12px; color:#854f0b;']);
+            echo html_writer::tag('strong', '✨ ¿Deseas ajustar estas opciones? Pide un cambio a AreteIA:', ['style' => 'display:block; margin-bottom:10px; font-size:12px; color:#854f0b;']);
             echo html_writer::tag('textarea', '', [
                 'name' => 'feedback',
                 'class' => 'form-control w-100 mb-2',
@@ -182,7 +181,7 @@ class step4 {
 
         echo html_writer::start_tag('div', ['class' => 'areteia-nav']);
         echo html_writer::link($prev_url, '← Anterior', ['class' => 'areteia-btn']);
-        echo html_writer::tag('span', 'Paso 4 de 7', ['class' => 'areteia-ncnt']);
+        
 
         if ($effective_sel) {
             if ($confirmed || $effective_sel === $instrument) {
@@ -250,7 +249,7 @@ class step4 {
                 echo html_writer::link($confirm_url, $btn_label, $btn_attrs);
             }
         } else {
-            echo html_writer::tag('span', 'Selecciona un instrumento para continuar', [
+            echo html_writer::tag('span', 'Seleccioná un instrumento para continuar', [
                 'class' => 'areteia-btn disabled',
                 'style' => 'opacity:0.5; cursor:not-allowed;',
             ]);
@@ -306,7 +305,7 @@ class step4 {
             return $sugs;
         }
 
-        $err = $res_data->message ?? 'Error en el servicio de IA.';
+        $err = $res_data->message ?? 'Error en el servicio de AreteIA.';
         if (!empty($res_data->reason)) $err .= " Motivo: " . $res_data->reason;
         echo $OUTPUT->notification('Error de IA: ' . $err, 'error');
         return [];

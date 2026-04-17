@@ -27,7 +27,7 @@ class step1 {
         
         echo html_writer::tag('p', 'Contexto pedagógico de la asignatura', ['class' => 'areteia-stitle']);
         echo html_writer::tag('p',
-            'Verificá los recursos importados de Moodle para asegurar que la biblioteca se haya generado correctamente',
+            'Verificá y escogé los recursos importados de Moodle para asegurar que tu biblioteca contenga todo lo que necesitás',
             ['class' => 'areteia-sdesc']
         );
 
@@ -95,46 +95,40 @@ class step1 {
         echo html_writer::end_tag('div');
 
         // --- Field: Recursos ---
-        echo html_writer::start_tag('div', ['class' => 'areteia-fr']);
-        echo html_writer::start_tag('div', ['class' => 'areteia-flbl']);
-        echo 'Recursos detectados';
+        // --- Field: Recursos ---
+if (!$already_ingested) {
+    echo html_writer::start_tag('div', ['class' => 'areteia-fr']);
+    echo html_writer::start_tag('div', ['class' => 'areteia-flbl']);
+    echo 'Recursos detectados';
+    echo html_writer::end_tag('div');
+
+    echo html_writer::start_tag('div', ['class' => 'areteia-fb fw']);
+
+    if ($service_down) {
+        echo html_writer::tag('div',
+            'El servicio de IA aún no ha arrancado (posible reinicio de PC). Reintentando...',
+            ['class' => 'areteia-fb fw', 'style' => 'color:#ff9800;']
+        );
+    } else {
+        $tree = \local_areteia\data_provider::get_course_materials_tree($id);
+        echo html_writer::start_tag('div', [
+            'class' => 'areteia-fb fw',
+            'style' => 'margin-bottom:15px; display: flex; justify-content: space-between; align-items: center;'
+        ]);
+        echo html_writer::tag('span', 'Seleccioná los recursos para AreteIA:', ['style' => 'font-weight:bold;']);
+        echo html_writer::tag('span', 'Calculando...', [
+            'id' => 'selection-count-badge',
+            'class' => 'sb-tag sb-warn',
+            'style' => 'margin-left:10px; padding: 4px 10px; border-radius: 12px; font-size: 11px;'
+        ]);
         echo html_writer::end_tag('div');
 
-        echo html_writer::start_tag('div', ['class' => 'areteia-fb fw']);
-        if ($already_ingested) {
-            echo html_writer::tag('div', 'Biblioteca detectada y persistente.', [
-                'class' => 'areteia-fb fw',
-                'style' => 'color:#28a745; font-weight:bold;',
-            ]);
-            if (!empty($status_data->path)) {
-                echo html_writer::tag('small', 'Ruta: ' . s($status_data->path), [
-                    'style' => 'display:block; color:#999; font-size:10px; margin-top:4px;',
-                ]);
-            }
-        } else if ($service_down) {
-            echo html_writer::tag('div',
-                'El servicio de IA aún no ha arrancado (posible reinicio de PC). Reintentando...',
-                ['class' => 'areteia-fb fw', 'style' => 'color:#ff9800;']
-            );
-        } else {
-            $tree = \local_areteia\data_provider::get_course_materials_tree($id);
-            echo html_writer::start_tag('div', [
-                'class' => 'areteia-fb fw', 
-                'style' => 'margin-bottom:15px; display: flex; justify-content: space-between; align-items: center;'
-            ]);
-            echo html_writer::tag('span', "Seleccioná los recursos para la IA:", ['style' => 'font-weight:bold;']);
-            echo html_writer::tag('span', 'Calculando...', [
-                'id' => 'selection-count-badge', 
-                'class' => 'sb-tag sb-warn',
-                'style' => 'margin-left:10px; padding: 4px 10px; border-radius: 12px; font-size: 11px;'
-            ]);
-            echo html_writer::end_tag('div');
-            self::render_materials_tree($tree, $prev_selected);
-        }
+        self::render_materials_tree($tree, $prev_selected);
+    }
 
-        echo html_writer::end_tag('div'); // areteia-fb
-        echo html_writer::end_tag('div'); // areteia-fr
-        echo html_writer::end_tag('div'); // areteia-fields
+    echo html_writer::end_tag('div'); // areteia-fb
+    echo html_writer::end_tag('div'); // areteia-fr
+}
     }
 
     /**
@@ -246,7 +240,7 @@ class step1 {
                 'style' => 'color:#28a745; display:block; margin-bottom:5px;',
             ]);
             echo html_writer::tag('p',
-                'La IA ya tiene acceso a los recursos de tu curso para darte mejores respuestas.',
+                'AreteIA ya tiene acceso a los recursos de tu curso para darte mejores respuestas.',
                 ['style' => 'font-size:12px; margin:0;']
             );
             echo html_writer::end_tag('div');
@@ -294,7 +288,7 @@ class step1 {
                 'style' => 'margin-top:16px;',
             ]);
             echo html_writer::end_tag('div');
-            step_renderer::render_nav(1, $prev_url, new moodle_url($PAGE->url, ['step' => 3, 'action' => 'eval']), 'Continuar al paso 2 →');
+            step_renderer::render_nav(1, $prev_url, new moodle_url($PAGE->url, ['step' => 3, 'action' => 'eval']), 'Continuar a Crear Evaluación →');
         } else if ($ingested == 2) {
             // Empty content
             echo html_writer::start_tag('div', [
@@ -305,7 +299,7 @@ class step1 {
                 'style' => 'color:#ffca28; display:block; margin-bottom:5px;',
             ]);
             echo html_writer::tag('p',
-                'Moodle entregó los archivos, pero la IA no encontró texto (quizás sean PDFs escaneados o carpetas vacías). Esto limitará las sugerencias de RAG.',
+                'Moodle entregó los archivos, pero AreteIA no encontró texto (quizás sean PDFs escaneados o carpetas vacías). Esto limitará las sugerencias de evaluación.',
                 ['style' => 'font-size:12px; line-height:1.4; margin:0;']
             );
             echo html_writer::end_tag('div');
@@ -323,7 +317,7 @@ class step1 {
                 'class' => 'areteia-card',
                 'style' => 'border-left: 5px solid #17a2b8; background: #f4f8ff; margin-bottom:20px;',
             ]);
-            echo html_writer::tag('strong', '⏳ Construyendo biblioteca de IA...', [
+            echo html_writer::tag('strong', '⏳ Construyendo biblioteca de AreteIA...', [
                 'style' => 'color:#17a2b8; display:block; margin-bottom:10px;',
             ]);
             
@@ -355,7 +349,7 @@ class step1 {
             
             echo html_writer::start_tag('div', ['class' => 'areteia-nav']);
             echo html_writer::link($prev_url, '← Volver', ['class' => 'areteia-btn']);
-            echo html_writer::tag('span', 'Paso 1 de 7', ['class' => 'areteia-ncnt']);
+
             echo html_writer::tag('span', 'Procesando...', [
                 'class' => 'areteia-btn disabled',
                 'style' => 'opacity:0.7; cursor:wait;',
@@ -384,8 +378,8 @@ class step1 {
             // Service not ready
             echo html_writer::start_tag('div', ['class' => 'areteia-nav']);
             echo html_writer::link($prev_url, '← Volver', ['class' => 'areteia-btn']);
-            echo html_writer::tag('span', 'Paso 1 de 2', ['class' => 'areteia-ncnt']);
-            echo html_writer::tag('span', 'Esperando al servicio de IA...', [
+            
+            echo html_writer::tag('span', 'Esperando al servicio de AretIA...', [
                 'class' => 'areteia-btn disabled',
                 'style' => 'opacity:0.7; cursor:wait;',
             ]);
@@ -408,7 +402,7 @@ class step1 {
 
             echo html_writer::start_tag('div', ['class' => 'areteia-nav']);
             echo html_writer::link($prev_url, '← Anterior', ['class' => 'areteia-btn']);
-            echo html_writer::tag('span', 'Paso 1 de 2', ['class' => 'areteia-ncnt']);
+            
             echo html_writer::tag('button', 'Confirmar y Construir Biblioteca', [
                 'type'     => 'submit',
                 'id'       => 'confirm-ingest-btn',

@@ -23,7 +23,7 @@ class step0 {
         
         echo html_writer::tag('p', '¿Tenés tu curso cargado en Moodle?', ['class' => 'areteia-stitle']);
         echo html_writer::tag('p',
-            'AreteIA ha detectado recursos en este curso. ¿Querés importarlos automáticamente o cargarlos manualmente?',
+            'AreteIA detectó recursos en este curso. ¿Querés importarlos automáticamente o cargarlos manualmente?',
             ['class' => 'areteia-sdesc']
         );
 
@@ -69,10 +69,6 @@ class step0 {
 
         echo html_writer::end_tag('div');
 
-        echo html_writer::tag('div',
-            'Nota: En ambos casos el proceso de diseño es exactamente el mismo.',
-            ['class' => 'areteia-note']
-        );
 
         // Navigation
         $action = $ctx['action'] ?? 'lib';
@@ -98,7 +94,7 @@ class step0 {
             0,
             null, // No back button for step 0
             $next_url,
-            'Sincronizar y Continuar →',
+            'Continuar →',
             [],
             ($s0_active === null ? 'Selecciona una opción' : null)
         );

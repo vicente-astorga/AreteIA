@@ -41,7 +41,7 @@ class step3 {
 
         $is_locked = lock_manager::is_locked(3);
 
-        echo html_writer::tag('span', 'Paso 3 — Diálogo con la IA', ['class' => 'areteia-tag t-ia']);
+        
         echo html_writer::tag('p', 'Clarificación del objetivo de evaluación', ['class' => 'areteia-stitle']);
         echo html_writer::tag('p', 'Dimensiones clave para definir qué y cómo evaluar.', ['class' => 'areteia-sdesc']);
 
@@ -80,6 +80,7 @@ class step3 {
             'Formulá uno o más objetivos: ¿qué querés saber si pueden hacer?',
             ['class' => 'dq', 'style' => 'font-weight:bold; margin-bottom:10px;']
         );
+        echo html_writer::tag('p', 'Que mis estudiantes puedan...', ['class' => 'areteia-sdesc']);
 
         echo html_writer::start_tag('div', ['id' => 'objectives-list', 'class' => 'mb-3']);
         
@@ -133,7 +134,7 @@ class step3 {
         self::render_dimension(
             'd3-container',
             'Dimensión 3 — Función de la evaluación',
-            null,
+            '¿Qué función tiene esta evaluación?',
             [
                 'Diagnóstica' => 'Actividades que se llevan a cabo antes de iniciar el proceso de enseñanza-aprendizaje a fin de conocer las competencias, intereses y/o motivaciones.',
                 'Formativa' => 'Proceso continuo y sistemático que ocurre durante el aprendizaje para monitorear el progreso del alumnado.',
@@ -146,7 +147,7 @@ class step3 {
         self::render_dimension(
             'd4-container',
             'Dimensión 4 — Modalidad',
-            null,
+            '¿Cuál es el modo de resolución?',
             [
                 'Individual' => 'Proceso sistemático para medir competencias, rendimiento, habilidades y potencial de una sola persona.',
                 'Grupal/Colaborativa' => 'Trabajo conjunto en la resolución de tareas asignadas para optimizar el propio aprendizaje y el de los otros miembros.'
@@ -182,10 +183,10 @@ class step3 {
 
         echo html_writer::start_tag('div', ['class' => 'areteia-nav']);
         echo html_writer::link($prev_url, '← Anterior', ['class' => 'areteia-btn']);
-        echo html_writer::tag('span', 'Paso 3 de 7', ['class' => 'areteia-ncnt']);
+        
 
         $btn_class = 'areteia-btn areteia-btn-primary ' . ($can_continue ? '' : 'disabled');
-        $btn_text  = $can_continue ? 'Ver Sugerencias →' : 'Completa todas las dimensiones';
+        $btn_text  = $can_continue ? 'Ver instrumentos sugeridos →' : 'Completa todas las dimensiones';
         $btn_style = $can_continue ? '' : 'opacity:0.5; cursor:not-allowed;';
         echo html_writer::link($next_url, $btn_text, [
             'id'    => 'next-step-btn',
@@ -272,7 +273,7 @@ class step3 {
         if ($is_locked) $select_attrs['disabled'] = 'disabled';
         
         $out .= html_writer::start_tag('select', $select_attrs);
-        $out .= html_writer::tag('option', 'Taxonomía...', ['value' => '']);
+        $out .= html_writer::tag('option', 'Elegí una acción', ['value' => '']);
         foreach ($bloom_options as $key => $desc) {
             $opt_attrs = ['value' => $key];
             if ($bloom === $key) {
