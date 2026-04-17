@@ -199,7 +199,7 @@ class step_renderer {
 
         $display_pos = ($pos !== false) ? ($pos + 1) : '?';
         $total = count($steps);
-        echo \html_writer::tag('span', "Paso $display_pos de $total", ['class' => 'areteia-ncnt']);
+        
 
         if ($disabled_label !== null) {
             echo \html_writer::tag('span', $disabled_label, [

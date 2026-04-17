@@ -41,10 +41,10 @@ document.addEventListener("click", e => {
 
     // Capture material selection in Step 1 if starting ingestion
     const options = { method: 'GET' };
-    
+
     // Use POST if we have a large d2_json payload (Step 3) or if starting ingestion
     if (url.searchParams.has("d2_json") || url.searchParams.get("action") === "ingest") {
-        
+
         // Guard: if ingestion, ensure at least one file is selected (Step 1)
         if (url.searchParams.get("action") === "ingest") {
             const checkedFiles = document.querySelectorAll('.tree-cb[data-type="file"]:checked');
@@ -62,7 +62,7 @@ document.addEventListener("click", e => {
         const body = new URLSearchParams();
         url.searchParams.forEach((val, key) => body.append(key, val));
         options.body = body.toString();
-        
+
         // When using POST, the request URL itself should ideally be clean of the payload params 
         // to avoid length limits, but index.php still needs action/step/id in GET often.
     }
@@ -71,9 +71,9 @@ document.addEventListener("click", e => {
         if (!r.ok) throw new Error("Server error " + r.status);
         const finalUrl = new URL(r.url);
         finalUrl.searchParams.delete("ajax");
-        
+
         const isStepChange = finalUrl.searchParams.get("step") !== new URL(location.href).searchParams.get("step");
-        
+
         window.history.pushState({}, "", finalUrl.toString());
         return r.text().then(html => ({ html, isStepChange }));
     }).then(({ html, isStepChange }) => {
@@ -84,7 +84,7 @@ document.addEventListener("click", e => {
         } else {
             surgicalUpdate(html);
         }
-        
+
         initStep3Reactivity();
         initGenerativeLoading();
         initTreeCheckboxes();
@@ -176,16 +176,16 @@ function updateParentStates(startCb) {
 
     while (current) {
         const parentCb = current.querySelector('.tree-row .tree-cb');
-        
+
         const treeChildren = Array.from(current.children).find(el => el.classList.contains('tree-children'));
         if (treeChildren && parentCb) {
             const childNodes = Array.from(treeChildren.children).filter(el => el.classList.contains('tree-node'));
             const siblingNodes = childNodes.map(node => node.querySelector('.tree-row .tree-cb')).filter(cb => cb);
-            
+
             if (siblingNodes.length > 0) {
                 const checkedCount = siblingNodes.filter(c => c.checked).length;
                 const isIndeterminate = siblingNodes.some(c => c.indeterminate);
-                
+
                 if (checkedCount === 0) {
                     parentCb.checked = false;
                     parentCb.indeterminate = isIndeterminate;
@@ -216,7 +216,7 @@ function initStep3Reactivity() {
     const updateBtn = () => {
         const rows = document.querySelectorAll('.objective-row');
         let hasValidObjective = false;
-        
+
         rows.forEach(row => {
             const text = row.querySelector('.objective-text-input').value.trim();
             if (text.length > 0) hasValidObjective = true;
@@ -229,7 +229,7 @@ function initStep3Reactivity() {
             btn.classList.remove("disabled");
             btn.style.opacity = "1";
             btn.style.cursor = "pointer";
-            btn.innerHTML = "Ver Sugerencias →";
+            btn.innerHTML = "Ver instrumentos recomendados →";
         } else {
             btn.classList.add("disabled");
             btn.style.opacity = "0.5";
@@ -248,15 +248,15 @@ function initStep3Reactivity() {
 
             const newRow = firstRow.cloneNode(true);
             newRow.dataset.index = count;
-            
+
             // Clear values
             const select = newRow.querySelector('select');
             const input = newRow.querySelector('input');
             select.value = "";
             input.value = "";
-            
+
             list.appendChild(newRow);
-            
+
             // Re-bind listeners
             bindRowListeners(newRow);
             updateBtn();
@@ -293,7 +293,7 @@ function initStep3Reactivity() {
             updateBtn();
             triggerAutoSave();
         });
-        
+
         if (removeBtn) {
             removeBtn.addEventListener('click', () => {
                 if (document.querySelectorAll('.objective-row').length > 1) {
@@ -419,17 +419,17 @@ document.addEventListener("DOMContentLoaded", () => {
  */
 function initPromptPreview() {
     // 1. Modal Close logic
-    window.closePromptPreview = function() {
+    window.closePromptPreview = function () {
         const overlay = document.getElementById("prompt-preview-overlay");
         if (overlay) overlay.classList.remove("active");
     };
 
     // 2. Copy logic
-    window.copyPromptToClipboard = function() {
+    window.copyPromptToClipboard = function () {
         const system = document.getElementById("preview-system-content").innerText;
         const user = document.getElementById("preview-user-content").innerText;
         const full = "SYSTEM PROMPT:\n" + system + "\n\nUSER PROMPT:\n" + user;
-        
+
         navigator.clipboard.writeText(full).then(() => {
             const btn = document.querySelector(".btn-copy-prompt");
             if (btn) {
@@ -448,7 +448,7 @@ function initPromptPreview() {
         const step = btn.dataset.pStep;
         const feedbackArea = document.querySelector('textarea[name="feedback"]');
         const feedback = feedbackArea ? feedbackArea.value : "";
-        
+
         btn.innerHTML = "⏳ Cargando...";
         btn.style.opacity = "0.7";
 
@@ -461,7 +461,7 @@ function initPromptPreview() {
         fetch(url).then(r => r.json()).then(res => {
             btn.innerHTML = "👁️ Ver Prompt";
             btn.style.opacity = "1";
-            
+
             if (res.status === "success") {
                 const sysContent = document.getElementById("preview-system-content");
                 const userContent = document.getElementById("preview-user-content");
@@ -499,7 +499,7 @@ function initIngestionForm() {
     if (!form || !input) return;
 
     // Use onsubmit to overwrite any previously attached listeners on AJAX re-loads
-    form.onsubmit = function(e) {
+    form.onsubmit = function (e) {
         // Collect checked file checkboxes
         const selectedFiles = [];
         document.querySelectorAll('.tree-cb[data-type="file"]:checked').forEach(cb => {
@@ -620,7 +620,7 @@ function surgicalUpdate(html, isAutoSave = false) {
     targets.forEach(id => {
         const oldEl = document.getElementById(id);
         let newEl = doc.getElementById(id);
-        
+
         // Special case for next-step-btn which might be inside a list
         if (!newEl) newEl = doc.querySelector(`#${id}`);
 
@@ -660,10 +660,10 @@ function captureStep3State(url) {
     rows.forEach(row => {
         const bloom = row.querySelector('.objective-bloom-select').value;
         const text = row.querySelector('.objective-text-input').value.trim();
-        
+
         // Always save to JSON to preserve UI state (fix: incluso si el texto está vacío)
         structured.push({ bloom, text });
-        
+
         // Only add to combined text for AI if there is content
         if (text) {
             combinedText += (bloom ? `[${bloom}] ` : "") + text + "\n";
@@ -679,7 +679,7 @@ function captureStep3State(url) {
  */
 function debounce(func, wait) {
     let timeout;
-    return function(...args) {
+    return function (...args) {
         clearTimeout(timeout);
         timeout = setTimeout(() => func.apply(this, args), wait);
     };
