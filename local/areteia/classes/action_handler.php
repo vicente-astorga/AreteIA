@@ -29,19 +29,27 @@ class action_handler {
                 return true; // never reached
 
             case 'ingest':
+                require_sesskey();
                 self::handle_ingest($course_id, $base_url, $is_ajax);
                 return true;
 
             case 'export':
+                require_sesskey();
                 self::handle_export($course_id, $base_url, $is_ajax);
                 return true;
 
             case 'delete_rag':
+                require_sesskey();
                 self::handle_delete_rag($course_id, $base_url, $is_ajax);
                 return true;
 
             case 'preview':
                 self::handle_preview($course_id);
+                return true;
+
+            case 'inject_quiz':
+                require_sesskey();
+                self::handle_inject_quiz($course_id, $base_url, $is_ajax);
                 return true;
 
             default:
@@ -185,9 +193,14 @@ class action_handler {
             $final_desc = 'Instrumento generado por AreteIA.';
         }
 
-        $moduleinfo = data_provider::create_assign_activity($course_id, $inst_name, $final_desc);
+        $moduleinfo = \local_areteia\data_provider::create_assign_activity($course_id, $inst_name, $final_desc);
 
-        $action = optional_param('action', 'lib', PARAM_ALPHA);
+        // Force a valid tab action to avoid infinite redirect loop
+        $action = optional_param('action', 'eval', PARAM_ALPHA);
+        if ($action === 'export') {
+            $action = 'eval';
+        }
+
         $redir = new \moodle_url($base_url, [
             'step'     => 7,
             'exported' => 1,
@@ -198,6 +211,85 @@ class action_handler {
             $redir->param('ajax', 1);
         }
         redirect($redir);
+    }
+
+    private static function handle_inject_quiz(int $course_id, \moodle_url $base_url, bool $is_ajax): void {
+        $section_num = optional_param('section_num', 0, PARAM_INT);
+
+        // 1. Intentar leer desde la sesión (JSON que guardó la IA)
+        $raw_questions = session_manager::get('quiz_content_json', '');
+        $questions = [];
+        
+        if (!empty($raw_questions)) {
+            $parsed = json_decode($raw_questions, true);
+            if (is_array($parsed) && count($parsed) > 0) {
+                // Validación básica de que parezca una lista de preguntas
+                if (isset($parsed[0]['type']) && isset($parsed[0]['text'])) {
+                    $questions = $parsed;
+                }
+            }
+        }
+
+        // 2. Si no hay preguntas válidas en sesión, usar el fallback
+        if (empty($questions)) {
+            $questions = self::get_fake_questions();
+        }
+
+        try {
+            $result = \local_areteia\data_provider::create_quiz_activity($course_id, $section_num, $questions);
+            if (!$result || !isset($result['coursemodule'])) {
+                throw new \moodle_exception('error_creating_quiz', 'local_areteia', '', null, 'Result is empty or invalid');
+            }
+            $quiz_cmid = $result['coursemodule'];
+        } catch (\Throwable $e) {
+            error_log('[AreteIA] inject_quiz error in course ' . $course_id . ': ' . $e->getMessage() . "\n" . $e->getTraceAsString());
+            $redir = new \moodle_url($base_url, [
+                'step'         => 7,
+                'action'       => 'eval',
+                'quiz_error'   => 1,
+            ]);
+            redirect($redir);
+        }
+
+        $redir = new \moodle_url($base_url, [
+            'step'         => 7,
+            'action'       => 'eval',
+            'quiz_injected'=> 1,
+            'quiz_cmid'    => $quiz_cmid,
+        ]);
+        if ($is_ajax) {
+            $redir->param('ajax', 1);
+        }
+        redirect($redir);
+    }
+
+    /**
+     * Returns the fake questions for quiz injection.
+     * Moved from step7 to action_handler for better availability.
+     */
+    public static function get_fake_questions(): array {
+        return [
+            [
+                'type'    => 'multichoice',
+                'text'    => 'Cual de los siguientes es un ejemplo de evaluacion formativa?',
+                'options' => [
+                    'Examen final del semestre',
+                    'Retroalimentacion continua durante el proceso de aprendizaje',
+                    'Prueba de admision universitaria',
+                    'Calificacion numerica trimestral',
+                ],
+                'correct' => 1,
+            ],
+            [
+                'type'    => 'truefalse',
+                'text'    => 'La taxonomia de Bloom clasifica los objetivos de aprendizaje en niveles cognitivos jerarquicos.',
+                'correct' => true,
+            ],
+            [
+                'type' => 'essay',
+                'text' => 'Describe como diseñarias una evaluacion autentica para tu asignatura. Fundamenta tu respuesta considerando el contexto pedagogico del curso.',
+            ],
+        ];
     }
 
     /**

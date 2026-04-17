@@ -14,20 +14,23 @@ document.addEventListener("click", e => {
     // Skip the ingest button — it is handled exclusively by initIngestionForm() via native form POST
     if (link.id === 'confirm-ingest-btn') return;
 
-    // Guard: only intercept real anchor tags with a valid href (not plain <button>)
-    if (link.tagName !== 'A' || !link.href || link.href === '#' || link.href === window.location.href + '#') {
+    // Handle different types of triggers (links vs form buttons)
+    let urlString = link.href;
+    let isFormSubmit = false;
+    let formElement = null;
+
+    if (!urlString && link.type === 'submit' && link.form) {
+        isFormSubmit = true;
+        formElement = link.form;
+        urlString = formElement.action || window.location.href;
+    }
+
+    // Guard: ensure we have a valid URL to fetch
+    if (!urlString || urlString === '#' || urlString === window.location.href + '#') {
         return;
     }
 
-    // Confirmation dialog (before fetch)
-    if (link.dataset.confirm && !confirm(link.dataset.confirm)) {
-        e.preventDefault();
-        return;
-    }
-
-    e.preventDefault();
-
-    const url = new URL(link.href);
+    const url = new URL(urlString);
     url.searchParams.set("ajax", "1");
 
     // Auto-capture the objective state for Step 3
@@ -42,11 +45,14 @@ document.addEventListener("click", e => {
     // Capture material selection in Step 1 if starting ingestion
     const options = { method: 'GET' };
     
-    // Use POST if we have a large d2_json payload (Step 3) or if starting ingestion
-    if (url.searchParams.has("d2_json") || url.searchParams.get("action") === "ingest") {
+    // Prepare body for POST if it's a form or a specific action
+    const isIngest = url.searchParams.get("action") === "ingest";
+    const isInject = url.searchParams.get("action") === "inject_quiz";
+    
+    if (url.searchParams.has("d2_json") || isIngest || isInject || isFormSubmit) {
         
         // Guard: if ingestion, ensure at least one file is selected (Step 1)
-        if (url.searchParams.get("action") === "ingest") {
+        if (isIngest) {
             const checkedFiles = document.querySelectorAll('.tree-cb[data-type="file"]:checked');
             if (checkedFiles.length === 0) {
                 alert("Por favor, selecciona al menos un recurso para continuar.");
@@ -60,11 +66,23 @@ document.addEventListener("click", e => {
         options.method = 'POST';
         options.headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
         const body = new URLSearchParams();
-        url.searchParams.forEach((val, key) => body.append(key, val));
-        options.body = body.toString();
         
-        // When using POST, the request URL itself should ideally be clean of the payload params 
-        // to avoid length limits, but index.php still needs action/step/id in GET often.
+        // 1. All existing URL search params
+        url.searchParams.forEach((val, key) => body.append(key, val));
+        
+        // 2. All form data if it's a form submission
+        if (isFormSubmit && formElement) {
+            const formData = new FormData(formElement);
+            for (const [key, val] of formData.entries()) {
+                if (!body.has(key)) body.append(key, val);
+            }
+        }
+
+        options.body = body.toString();
+        e.preventDefault();
+    } else {
+        // Standard link navigation
+        e.preventDefault();
     }
 
     fetch(url, options).then(r => {

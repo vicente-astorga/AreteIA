@@ -306,6 +306,394 @@ class data_provider {
     }
 
     /**
+     * Return the list of visible course sections for the quiz injection selector.
+     *
+     * @param int $courseid
+     * @return array  [['num' => int, 'name' => string], ...]
+     */
+    public static function get_course_sections(int $courseid): array {
+        global $DB;
+        $course   = $DB->get_record('course', ['id' => $courseid], '*', MUST_EXIST);
+        $modinfo  = get_fast_modinfo($course);
+        $sections = [];
+        foreach ($modinfo->get_section_info_all() as $section) {
+            if (!$section->uservisible) continue;
+            $sections[] = [
+                'num'  => (int)$section->section,
+                'name' => get_section_name($course, $section),
+            ];
+        }
+        return $sections;
+    }
+
+    /**
+     * Programmatically create a Moodle Quiz with the given questions.
+     * Compatible with both Moodle 3.x and Moodle 4.x question bank structures.
+     *
+     * @param int    $courseid
+     * @param int    $section_num  Section number (0 = section 0 / General)
+     * @param array  $questions    Array of question data from step7::get_fake_questions()
+     * @param string $name         Quiz activity name
+     * @return array  ['coursemodule' => int]
+     */
+    public static function create_quiz_activity(
+        int $courseid,
+        int $section_num,
+        array $questions,
+        string $name = 'Cuestionario AreteIA'
+    ): array {
+        global $CFG, $DB, $USER;
+        require_once($CFG->dirroot . '/course/lib.php');
+        require_once($CFG->libdir  . '/questionlib.php');
+        require_once($CFG->dirroot . '/mod/quiz/lib.php');
+        require_once($CFG->dirroot . '/mod/quiz/locallib.php');
+
+        $course         = $DB->get_record('course', ['id' => $courseid], '*', MUST_EXIST);
+        $module         = $DB->get_record('modules', ['name' => 'quiz'], '*', MUST_EXIST);
+        $course_context = \context_course::instance($courseid);
+
+        // ----------------------------------------------------------------
+        // 1. Create the quiz instance record
+        // ----------------------------------------------------------------
+        $quiz = new \stdClass();
+        $quiz->course              = $courseid;
+        $quiz->name                = $name;
+        $quiz->intro               = '';
+        $quiz->introformat         = FORMAT_HTML;
+        $quiz->timeopen            = 0;
+        $quiz->timeclose           = 0;
+        $quiz->timelimit           = 0;
+        $quiz->overduehandling     = 'autosubmit';
+        $quiz->graceperiod         = 0;
+        $quiz->preferredbehaviour  = 'deferredfeedback';
+        $quiz->canredoquestions    = 0;
+        $quiz->attempts            = 0;
+        $quiz->attemptonlast       = 0;
+        $quiz->grademethod         = 1; // QUIZ_GRADEHIGHEST
+        $quiz->decimalpoints       = 2;
+        $quiz->questiondecimalpoints = -1;
+        $quiz->reviewattempt       = 69904;
+        $quiz->reviewcorrectness   = 4368;
+        $quiz->reviewmarks         = 4368;
+        $quiz->reviewspecificfeedback = 4368;
+        $quiz->reviewgeneralfeedback  = 4368;
+        $quiz->reviewrightanswer   = 4368;
+        $quiz->reviewoverallfeedback  = 4368;
+        $quiz->questionsperpage    = 0;
+        $quiz->navmethod           = 'free';
+        $quiz->shuffleanswers      = 1;
+        $quiz->sumgrades           = 0;
+        $quiz->grade               = count($questions) * 1.0;
+        $quiz->timecreated         = time();
+        $quiz->timemodified        = time();
+        $quiz->password            = '';
+        $quiz->subnet              = '';
+        $quiz->browsersecurity     = '-';
+        $quiz->delay1              = 0;
+        $quiz->delay2              = 0;
+        $quiz->showuserpicture     = 0;
+        $quiz->showblocks          = 0;
+        $quiz->id = $DB->insert_record('quiz', $quiz);
+
+        // ----------------------------------------------------------------
+        // 2. Attach quiz to a course section
+        // ----------------------------------------------------------------
+        $modinfo    = get_fast_modinfo($course);
+        $section_id = 0;
+        foreach ($modinfo->get_section_info_all() as $s) {
+            if ((int)$s->section === $section_num) {
+                $section_id = $s->id;
+                break;
+            }
+        }
+        // Fallback: use first non-zero section, or 0
+        if (!$section_id) {
+            foreach ($modinfo->get_section_info_all() as $s) {
+                if ($s->section > 0) {
+                    $section_id  = $s->id;
+                    $section_num = $s->section;
+                    break;
+                }
+            }
+        }
+
+        $cm           = new \stdClass();
+        $cm->course   = $courseid;
+        $cm->module   = $module->id;
+        $cm->instance = $quiz->id;
+        $cm->section  = $section_id;
+        $cm->id       = add_course_module($cm);
+        course_add_cm_to_section($courseid, $cm->id, $section_num);
+
+        // ----------------------------------------------------------------
+        // CRITICAL: Set cmid on the quiz object NOW, before adding questions.
+        // quiz_add_quiz_question() in Moodle 4.x needs quiz->cmid to create
+        // the question_references record. Without it, it falls back to
+        // get_coursemodule_from_instance() which can fail silently on a
+        // freshly-inserted CM (cache not warmed), leaving quiz_slots with
+        // no maxmark and sumgrades = 0  →  "cannot start: no gradeable questions".
+        // ----------------------------------------------------------------
+        $quiz->cmid = $cm->id;
+
+        // Reload the quiz record from DB so the object reflects the actual
+        // persisted state (e.g. sumgrades, grade), then re-attach cmid.
+        $quiz = $DB->get_record('quiz', ['id' => $quiz->id], '*', MUST_EXIST);
+        $quiz->cmid = $cm->id;
+
+        // ----------------------------------------------------------------
+        // 3. Get or create default question category for this course
+        // ----------------------------------------------------------------
+        $category = $DB->get_record_sql(
+            "SELECT * FROM {question_categories} WHERE contextid = ? ORDER BY parent ASC, id ASC LIMIT 1",
+            [$course_context->id]
+        );
+        if (!$category) {
+            $category              = new \stdClass();
+            $category->name        = 'Preguntas de ' . $course->fullname;
+            $category->contextid   = $course_context->id;
+            $category->info        = '';
+            $category->infoformat  = FORMAT_HTML;
+            $category->sortorder   = 999;
+            $category->parent      = 0;
+            $category->stamp       = time() . '+' . make_unique_id_code();
+            $category->id = $DB->insert_record('question_categories', $category);
+        }
+
+        // ----------------------------------------------------------------
+        // 4. Create questions and add them to the quiz
+        // ----------------------------------------------------------------
+        $quiz_context = \context_module::instance($cm->id);
+        $has_question_refs = $DB->get_manager()->table_exists('question_references');
+
+        // Explicitly create the default quiz section for Moodle 4.x +
+        if ($has_question_refs) {
+            $hqs = $DB->get_manager()->table_exists('quiz_sections');
+            if ($hqs) {
+                $section = new \stdClass();
+                $section->quizid = $quiz->id;
+                $section->firstslot = 1;
+                $section->heading = '';
+                $section->shufflequestions = 0;
+                $DB->insert_record('quiz_sections', $section);
+            }
+        }
+
+        foreach ($questions as $idx => $q_data) {
+            $slot_num = $idx + 1;
+
+            // Create the question record in the question bank
+            $qid = self::create_question_for_bank(
+                $q_data, $category->id, $slot_num
+            );
+
+            if ($has_question_refs) {
+                // Completely bypass Moodle's native quiz_add_quiz_question which silently
+                // fails in bulk custom injection (e.g., deduplication/cache false-positives).
+                
+                // 4a. quiz_slots
+                // For AI generated quizzes (up to 15 questions), it is cleaner
+                // to bunch them on a single page (page=1) rather than a page per slot.
+                $slot = new \stdClass();
+                $slot->quizid = $quiz->id;
+                $slot->slot = $slot_num;
+                $slot->page = 1; 
+                $slot->displaynumber = '';
+                $slot->requireprevious = 0;
+                $slot->maxmark = 1.0;
+                $slot_id = $DB->insert_record('quiz_slots', $slot);
+
+                // 4b. question_references wiring
+                $qv = $DB->get_record('question_versions', ['questionid' => $qid]);
+                if ($qv) {
+                    $qref = new \stdClass();
+                    $qref->usingcontextid     = $quiz_context->id;
+                    $qref->component          = 'mod_quiz';
+                    $qref->questionarea       = 'slot';
+                    $qref->itemid             = $slot_id;
+                    $qref->questionbankentryid= $qv->questionbankentryid;
+                    $qref->version            = null; // always latest
+                    $DB->insert_record('question_references', $qref);
+                }
+            } else {
+                // Fallback for Moodle 3.x
+                quiz_add_quiz_question($qid, $quiz, 0, 1.0);
+            }
+        }
+
+        // Recalculate sumgrades (sum of maxmark from quiz_slots)
+        quiz_update_sumgrades($quiz);
+
+        // Verify sumgrades was updated; if still 0 with questions, force-fix.
+        $db_sumgrades = $DB->get_field('quiz', 'sumgrades', ['id' => $quiz->id]);
+        if ($db_sumgrades == 0 && count($questions) > 0) {
+            $expected = (float) count($questions);
+            $DB->set_field('quiz', 'sumgrades', $expected, ['id' => $quiz->id]);
+            $DB->set_field('quiz', 'grade',     $expected, ['id' => $quiz->id]);
+            error_log('[AreteIA] Force-fixed sumgrades=' . $expected . ' for quiz id=' . $quiz->id);
+        }
+
+        // Force course cache rebuild
+        rebuild_course_cache($courseid, true);
+        get_fast_modinfo($courseid, 0, true);
+
+        return ['coursemodule' => $cm->id];
+    }
+
+    // ------------------------------------------------------------------
+    // Private: question creation helpers
+    // ------------------------------------------------------------------
+
+    /**
+     * Create a single question in the question bank.
+     * Returns the question ID. Moodle's quiz_add_quiz_question() handles
+     * all quiz_slots/question_references/question_versions wiring.
+     */
+    private static function create_question_for_bank(
+        array $q_data,
+        int $category_id,
+        int $slot_num
+    ): int {
+        global $DB, $USER;
+
+        // --- Core question record ---
+        $q                         = new \stdClass();
+        $q->name                   = 'Pregunta ' . $slot_num . ': ' . substr($q_data['text'], 0, 50) . '...';
+        $q->questiontext           = $q_data['text'];
+        $q->questiontextformat     = FORMAT_HTML;
+        $q->generalfeedback        = '';
+        $q->generalfeedbackformat  = FORMAT_HTML;
+        $q->defaultmark            = 1.0;
+        $q->penalty                = ($q_data['type'] === 'essay') ? 0.0 : 0.3333333;
+        $q->qtype                  = $q_data['type'];
+        $q->length                 = ($q_data['type'] === 'essay') ? 0 : 1;
+        $q->stamp                  = make_unique_id_code();
+        $q->category               = $category_id;
+        $q->parent                 = 0;
+        $q->hidden                 = 0;
+        $q->timecreated            = time();
+        $q->timemodified           = time();
+        $q->createdby              = $USER->id;
+        $q->modifiedby             = $USER->id;
+        $q->version                = make_unique_id_code();
+        $q->id = $DB->insert_record('question', $q);
+
+        // --- Moodle 4.x: question_bank_entries + question_versions ---
+        if ($DB->get_manager()->table_exists('question_bank_entries')) {
+            $qbe                       = new \stdClass();
+            $qbe->questioncategoryid   = $category_id;
+            $qbe->idnumber             = null;
+            $qbe->ownerid              = $USER->id;
+            $qbe_id = $DB->insert_record('question_bank_entries', $qbe);
+
+            $qv                       = new \stdClass();
+            $qv->questionbankentryid  = $qbe_id;
+            $qv->version              = 1;
+            $qv->questionid           = $q->id;
+            $qv->status               = 'ready';
+            $DB->insert_record('question_versions', $qv);
+        }
+
+        // --- Type-specific options ---
+        switch ($q_data['type']) {
+            case 'multichoice':
+                self::create_multichoice_data($q->id, $q_data);
+                break;
+            case 'truefalse':
+                self::create_truefalse_data($q->id, $q_data);
+                break;
+            case 'essay':
+                self::create_essay_data($q->id);
+                break;
+        }
+
+        return $q->id;
+    }
+
+    /** Create answers + options for a multichoice question. */
+    private static function create_multichoice_data(int $qid, array $q_data): void {
+        global $DB;
+
+        $correct_index = $q_data['correct'] ?? 0;
+        foreach ($q_data['options'] as $i => $option_text) {
+            $ans                  = new \stdClass();
+            $ans->question        = $qid;
+            $ans->answer          = $option_text;
+            $ans->answerformat    = FORMAT_HTML;
+            $ans->fraction        = ($i === $correct_index) ? 1.0 : 0.0;
+            $ans->feedback        = '';
+            $ans->feedbackformat  = FORMAT_HTML;
+            $DB->insert_record('question_answers', $ans);
+        }
+
+        $opts                              = new \stdClass();
+        $opts->questionid                  = $qid;
+        $opts->layout                      = 0;
+        $opts->single                      = 1; // single correct answer
+        $opts->shuffleanswers              = 1;
+        $opts->correctfeedback             = 'Correcto.';
+        $opts->correctfeedbackformat       = FORMAT_HTML;
+        $opts->partiallycorrectfeedback    = '';
+        $opts->partiallycorrectfeedbackformat = FORMAT_HTML;
+        $opts->incorrectfeedback           = 'Incorrecto.';
+        $opts->incorrectfeedbackformat     = FORMAT_HTML;
+        $opts->answernumbering             = 'abc';
+        $opts->showstandardinstruction     = 1;
+        $DB->insert_record('qtype_multichoice_options', $opts);
+    }
+
+    /** Create answers + options for a true/false question. */
+    private static function create_truefalse_data(int $qid, array $q_data): void {
+        global $DB;
+
+        $correct = $q_data['correct'] ?? true;
+
+        $true_ans               = new \stdClass();
+        $true_ans->question     = $qid;
+        $true_ans->answer       = 'True';
+        $true_ans->answerformat = FORMAT_MOODLE;
+        $true_ans->fraction     = $correct ? 1.0 : 0.0;
+        $true_ans->feedback     = '';
+        $true_ans->feedbackformat = FORMAT_HTML;
+        $true_id = $DB->insert_record('question_answers', $true_ans);
+
+        $false_ans               = new \stdClass();
+        $false_ans->question     = $qid;
+        $false_ans->answer       = 'False';
+        $false_ans->answerformat = FORMAT_MOODLE;
+        $false_ans->fraction     = $correct ? 0.0 : 1.0;
+        $false_ans->feedback     = '';
+        $false_ans->feedbackformat = FORMAT_HTML;
+        $false_id = $DB->insert_record('question_answers', $false_ans);
+
+        $opts               = new \stdClass();
+        $opts->question     = $qid;
+        $opts->trueanswer   = $true_id;
+        $opts->falseanswer  = $false_id;
+        $DB->insert_record('question_truefalse', $opts);
+    }
+
+    /** Create options for an essay question. */
+    private static function create_essay_data(int $qid): void {
+        global $DB;
+
+        $opts                          = new \stdClass();
+        $opts->questionid              = $qid;
+        $opts->responseformat          = 'editor';
+        $opts->responserequired        = 1;
+        $opts->responsefieldlines      = 15;
+        $opts->minwordlimit            = null;
+        $opts->maxwordlimit            = null;
+        $opts->attachments             = 0;
+        $opts->attachmentsrequired     = 0;
+        $opts->graderinfo              = '';
+        $opts->graderinfoformat        = FORMAT_HTML;
+        $opts->responsetemplate        = '';
+        $opts->responsetemplateformat  = FORMAT_HTML;
+        $opts->maxbytes                = 0;
+        $DB->insert_record('qtype_essay_options', $opts);
+    }
+
+    /**
      * Create a new Moodle Assign activity programmatically
      * 
      * @param int $courseid

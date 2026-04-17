@@ -18,12 +18,14 @@
 
 require_once(__DIR__ . '/../../config.php');
 
+global $CFG, $DB, $PAGE, $OUTPUT, $USER;
+
 $id     = optional_param('id', 0, PARAM_INT);
 $action = optional_param('action', 'lib', PARAM_ALPHANUMEXT);
 $step   = optional_param('step', -1, PARAM_INT); // -1 to detect if not provided
 
 // Allow server-side redirect actions to bypass tab validation
-$server_actions = ['sync', 'ingest', 'export', 'delete_rag', 'preview'];
+$server_actions = ['sync', 'ingest', 'export', 'delete_rag', 'preview', 'inject_quiz'];
 if (!isset(\local_areteia\step_renderer::ACTIONS[$action]) && !in_array($action, $server_actions)) {
     $action = 'lib';
 }
@@ -45,6 +47,8 @@ if (!$id) {
 }
 
 require_once($CFG->libdir . '/filelib.php');
+require_once($CFG->dirroot . '/course/lib.php');
+require_once($CFG->libdir . '/questionlib.php');
 
 $context = context_course::instance($id);
 $PAGE->set_url(new moodle_url('/local/areteia/index.php', [
@@ -84,6 +88,17 @@ if ($is_ajax) {
 }
 
 // ------------------------------------------------------------------
+// Session state management
+// ------------------------------------------------------------------
+try {
+    \local_areteia\session_manager::init();
+    \local_areteia\session_manager::sync_from_request();
+} catch (\Throwable $e) {
+    // Session init failure is unlikely but we should be safe
+    error_log('[AreteIA] Session init failed: ' . $e->getMessage());
+}
+
+// ------------------------------------------------------------------
 // Action handling (redirect before any rendering)
 // ------------------------------------------------------------------
 if (in_array($action, $server_actions)) {
@@ -95,19 +110,15 @@ if (in_array($action, $server_actions)) {
 // Main rendering inside try/catch for stability
 // ------------------------------------------------------------------
 try {
-    // Session state management
-    \local_areteia\session_manager::init();
-    \local_areteia\session_manager::sync_from_request();
-
-    // Export action (needs session to be initialized first)
-    if ($action === 'export') {
-        \local_areteia\action_handler::handle($action, $id, $PAGE->url, $is_ajax);
-        // ^ never returns
-    }
-
     // Fetch course data
     $summary = \local_areteia\data_provider::get_course_summary($id);
     $files   = \local_areteia\data_provider::get_course_files($id);
+    $step_data = [
+        'summary' => $summary,
+        'files'   => $files,
+        'context' => $context,
+        'is_ajax' => $is_ajax
+    ];
 
     // Outer wrapper (only for non-AJAX — AJAX replaces inner content)
     if (!$is_ajax) {
