@@ -62,7 +62,6 @@ class step3 {
             'Dimensión 1 — Tipo de contenido',
             '¿Qué tipo de contenido es el foco principal?',
             [
-                'Factual' => 'Hechos, datos, acontecimientos, situaciones concretas objetivas y verificables.',
                 'Conceptual' => 'Conceptos, principios y teorías.',
                 'Procedimental' => 'Acciones, pasos ordenados, técnicas, estrategias.',
                 'Actitudinal' => 'Valores, normas, creencias, actitudes.'
