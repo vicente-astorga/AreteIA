@@ -155,6 +155,33 @@ async def _prepare_prompt_data(request: GenerateRequest):
     """
     Internal helper to search RAG/Guidelines and select the correct prompt templates.
     """
+    def _build_structured_materials(course_id, obj_list, all_vectors):
+        from rag.search import search_course_by_vector
+        materials_parts = []
+        seen_texts = set()
+        vector_idx = 1
+        for i, obj in enumerate(obj_list):
+            obj_text = obj.get('text', '')
+            bloom = obj.get('bloom', 'GENERAL').upper()
+            fragments = []
+            if obj_text and vector_idx < len(all_vectors):
+                results = search_course_by_vector(course_id, all_vectors[vector_idx], top_k=2)
+                vector_idx += 1
+                for res in results:
+                    txt = " ".join(res['text'].split())
+                    if txt and txt not in seen_texts:
+                        fragments.append(f"            - Extracto: \"{txt}\"\n            - Referencia: {res.get('filename', 'Archivo desconocido')}")
+                        seen_texts.add(txt)
+            obj_header = f"- Objetivo {i+1}:\n"
+            obj_header += f"        - Nivel taxonómico: {bloom}\n"
+            obj_header += f"        - Declaración objetivo: {obj_text}\n"
+            obj_header += f"        - Extracto de los materiales:\n"
+            if fragments:
+                materials_parts.append(obj_header + "\n".join(fragments))
+            else:
+                materials_parts.append(obj_header + "            (No se encontraron materiales específicos en los recursos seleccionados)")
+        return "\n\n".join(materials_parts) if materials_parts else "No se proporcionaron objetivos específicos."
+
     try:
         from llm import (
             classify_feedback,
@@ -213,42 +240,9 @@ async def _prepare_prompt_data(request: GenerateRequest):
             g_results = search_course_by_vector(0, all_vectors[0], top_k=3)
             guidelines_text = "DIRECTRICES PEDAGÓGICAS (REGLAS GLOBALES):\n" + "\n".join([f"- {res['text']}" for res in g_results[:3]]) + "\n\n"
 
-        # Structured RAG context calculation (Course Materials)
-        structured_rag = []
-        seen_texts = set()
-        
-        vector_idx = 1
-        for obj in obj_list:
-            obj_text = obj.get('text', '')
-            bloom = obj.get('bloom', 'GENERAL')
-            if obj_text and vector_idx < len(all_vectors):
-                results = search_course_by_vector(request.course_id, all_vectors[vector_idx], top_k=2)
-                vector_idx += 1
-                fragments = []
-                for res in results:
-                    txt = res['text']
-                    if txt not in seen_texts:
-                        fragments.append(f"• \"{txt}\" (Fuente: {res.get('filename', 'Archivo desconocido')})")
-                        seen_texts.add(txt)
-                
-                if fragments:
-                    structured_rag.append(f"OBJETIVO [{bloom}]: {obj_text}\n" + "\n".join(fragments))
-
-        # Fallback for main objective if no structured fragments were found
-        if not structured_rag:
-            # Re-use the main_query vector (index 0)
-            results = search_course_by_vector(request.course_id, all_vectors[0], top_k=5)
-            fragments = []
-            for res in results:
-                txt = res['text']
-                if txt not in seen_texts:
-                    fragments.append(f"• \"{txt}\" (Fuente: {res.get('filename', 'Archivo desconocido')})")
-                    seen_texts.add(txt)
-            if fragments:
-                structured_rag.append(f"OBJETIVO GENERAL: {request.objective}\n" + "\n".join(fragments))
-
-        rag_text = "\n\n".join(structured_rag) if structured_rag else "No se encontraron fragmentos específicos en los materiales del curso."
-        full_context = f"{guidelines_text}CONTEXTO EXTRAÍDO DE MATERIALES DEL CURSO:\n{rag_text}"
+        # Unified Structured RAG context calculation
+        materials_str = _build_structured_materials(request.course_id, obj_list, all_vectors)
+        full_context = f"{guidelines_text}CONTEXTO EXTRAÍDO DE MATERIALES DEL CURSO:\n{materials_str}"
 
         # 3. Build Dimensions String (D1, D3, D4)
         # Use granular fields if available, otherwise fallback to the concatenated string
@@ -261,7 +255,8 @@ async def _prepare_prompt_data(request: GenerateRequest):
 
         # 4. Build prompt based on step
         prompt = ""
-        system_prompt = "Eres un experto en pedagogía y diseño de instrumentos de evaluación."
+        course_name = request.course_title or "el curso"
+        system_prompt = f"Eres un experto en pedagogía y diseño de instrumentos de evaluación y de apoyo a la corrección en el curso {course_name}."
         schema = None
         
         if request.step == 4:
@@ -273,7 +268,59 @@ async def _prepare_prompt_data(request: GenerateRequest):
             prompt = get_suggestions_prompt(request.summary, request.objective, dimensions, extended_context, request.feedback)
             schema = SuggestionsResponse
         elif request.step == 5:
-            prompt = get_design_prompt(request.chosen_instrument, request.objective, full_context, request.feedback)
+            # 1. Load Instrument Document & Resolve ID
+            instrument_desc = ""
+            chosen_id = None
+            try:
+                inst_list = get_instrument_list()
+                target_raw = (request.chosen_instrument or "").strip().lower()
+                
+                for inst in inst_list:
+                    # Check ID match first (future-proof) or Name match (legacy support)
+                    if inst.get('id') == request.chosen_instrument or inst.get('name', '').strip().lower() == target_raw:
+                        instrument_desc = inst.get('definition', '')
+                        chosen_id = inst.get('id')
+                        break
+                
+                if not chosen_id:
+                    logging.warning(f"Instrument '{request.chosen_instrument}' not found in master catalog.")
+            except Exception as e:
+                logging.error(f"Error loading instrument context: {e}")
+
+            # 4. Load & Filter Allowed Question Types
+            valid_types = []
+            try:
+                qt_path = os.path.join(os.path.dirname(__file__), "rag/documentos_maestros/tipos_de_preguntas.json")
+                if os.path.exists(qt_path):
+                    with open(qt_path, "r", encoding="utf-8") as f:
+                        valid_types = json.load(f)
+                
+                encaje_path = os.path.join(os.path.dirname(__file__), "rag/documentos_maestros/encaje_instrumentos_items.json")
+                if os.path.exists(encaje_path):
+                    with open(encaje_path, "r", encoding="utf-8") as f:
+                        encaje_map = json.load(f)
+                    
+                    # If we have a valid instrument ID, filter types by their IDs
+                    if chosen_id and chosen_id in encaje_map:
+                        allowed_type_ids = encaje_map[chosen_id]
+                        valid_types = [
+                            t for t in valid_types 
+                            if t.get('id') in allowed_type_ids
+                        ]
+                    else:
+                        logging.warning(f"No specific question types mapped for instrument ID: '{chosen_id}'")
+            except Exception as e:
+                logging.error(f"Error handling question types: {e}")
+
+            prompt = get_design_prompt(
+                chosen_instrument=request.chosen_instrument,
+                instrument_desc=instrument_desc,
+                structured_materials=materials_str,
+                num_items=request.num_items,
+                valid_types=valid_types,
+                feedback=request.feedback,
+                current_design=request.instrument_content
+            )
             schema = InstrumentDesign
         elif request.step == 6:
             prompt = get_rubric_prompt(request.instrument_content, request.objective, full_context, request.feedback)
@@ -303,7 +350,7 @@ async def generate_endpoint(request: GenerateRequest):
             return prompt
 
         # 4. Call LLM
-        response_text = generate_completion(prompt, system_prompt)
+        response_text, usage = generate_completion(prompt, system_prompt)
         
         if not response_text:
             return {"status": "error", "message": "AI generation failed"}
@@ -312,7 +359,11 @@ async def generate_endpoint(request: GenerateRequest):
         try:
             clean_json = re.sub(r'^```json|```$', '', response_text, flags=re.MULTILINE).strip()
             validated_data = schema.parse_raw(clean_json)
-            return {"status": "success", "output": validated_data.dict()}
+            return {
+                "status": "success", 
+                "output": validated_data.dict(),
+                "usage": usage
+            }
         except Exception as e:
             logging.exception("Validation failed for LLM output")
             # If validation fails, we try to return the raw text with a warning or just error

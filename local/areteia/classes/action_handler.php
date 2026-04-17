@@ -315,7 +315,7 @@ class action_handler {
             'd3_function'        => session_manager::get('d3', ''),
             'd4_modality'        => session_manager::get('d4', ''),
             'feedback'           => $feedback,
-            'chosen_instrument'  => session_manager::get('instrument', ''),
+            'chosen_instrument'  => session_manager::get('instrument') ?: session_manager::get('sel_sug', ''),
             'instrument_content' => session_manager::get('inst_content', ''),
         ];
 

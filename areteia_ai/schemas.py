@@ -10,13 +10,16 @@ class SuggestionsResponse(BaseModel):
     suggestions: List[SuggestionItem]
 
 class InstrumentItem(BaseModel):
-    text: str
-    bloom_level: str
-    points: int
+    type: str # Must be one of the names in tipos_de_preguntas.json
+    objectives: List[str]
+    consiga: str # The main question or text
+    alternativas: Optional[List[str]] = None # List of options for Multiple Choice
+    oraciones: Optional[List[str]] = None # List of sentences for True/False
+    difficulty: str # e.g., "Fácil", "Media", "Difícil"
+    points: Optional[float] = None # Estimated points (not final)
 
 class InstrumentDesign(BaseModel):
     title: str
-    instructions: str
     items: List[InstrumentItem]
     justification: str
 
@@ -41,6 +44,7 @@ class FeedbackClassification(BaseModel):
 
 class GenerateRequest(BaseModel):
     course_id: int
+    course_title: Optional[str] = None
     step: int
     objective: str = ""
     objective_json: Optional[str] = ""
@@ -53,3 +57,4 @@ class GenerateRequest(BaseModel):
     d1_content: str = ""
     d3_function: str = ""
     d4_modality: str = ""
+    num_items: Optional[int] = 5

@@ -23,6 +23,7 @@ class step4 {
         $summary    = $ctx['summary'];
         $sel_sug    = optional_param('sel_sug', '', PARAM_TEXT);
         $do_gen     = optional_param('do_gen', 0, PARAM_INT);
+        $confirmed  = optional_param('confirmed', 0, PARAM_INT);
         $instrument = session_manager::get('instrument', '');
         $d2         = session_manager::get('d2', '');
         $d1         = session_manager::get('d1', '');
@@ -39,6 +40,10 @@ class step4 {
             'La IA propone una batería de instrumentos justificados pedagógicamente basados en tu objetivo.',
             ['class' => 'areteia-sdesc']
         );
+        
+        step_renderer::render_rag_info();
+
+        echo step_renderer::render_ai_usage_badge($usage);
 
         // Lock banner: protect downstream generated content
         $is_locked = lock_manager::is_locked(4);
@@ -56,6 +61,7 @@ class step4 {
         if ($s_sugs_raw) {
             $sugs = @json_decode($s_sugs_raw, true) ?: [];
         }
+        $usage = session_manager::get('s4_usage', null);
 
         // Generate suggestions via AI if requested
         if ($do_gen) {
@@ -154,22 +160,70 @@ class step4 {
         echo html_writer::tag('span', 'Paso 4 de 7', ['class' => 'areteia-ncnt']);
 
         if ($effective_sel) {
-            $btn_attrs = ['class' => 'areteia-btn areteia-btn-primary'];
-            $btn_label = ($effective_sel === $instrument) ? 'Continuar →' : 'Confirmar Instrumento →';
+            if ($confirmed || $effective_sel === $instrument) {
+                // We are in the "Generation Config" state
+                echo html_writer::start_tag('div', [
+                    'id' => 'gen-config-area',
+                    'style' => 'background:#f0f7ff; border:1px solid #c2e0ff; padding:20px; border-radius:12px; margin-top:20px; width:100%; text-align:center;'
+                ]);
+                
+                echo html_writer::tag('p', "Has seleccionado: <strong>$effective_sel</strong>", ['style' => 'margin-bottom:15px; color:#185fa5;']);
+                
+                echo html_writer::start_tag('div', ['style' => 'display:flex; justify-content:center; align-items:center; gap:15px; flex-wrap:wrap;']);
+                echo html_writer::tag('label', '¿Cuántos ítems quieres generar?', ['for' => 'num_items_input', 'style' => 'margin-bottom:0; font-weight:bold;']);
+                echo html_writer::tag('input', '', [
+                    'type'  => 'number',
+                    'id'    => 'num_items_input',
+                    'class' => 'form-control',
+                    'style' => 'width:80px; text-align:center;',
+                    'value' => '5',
+                    'min'   => '1',
+                    'max'   => '20'
+                ]);
+                
+                echo step_renderer::render_preview_button(5);
+                
+                $gen_items_url = new moodle_url($PAGE->url, array_merge($link_params, [
+                    'step'       => 5,
+                    'do_gen'     => 1,
+                    'instrument' => $effective_sel
+                ]));
+                
+                echo html_writer::link($gen_items_url, '✨ Generar Ítems', [
+                    'id'    => 'btn-generate-items',
+                    'class' => 'areteia-btn areteia-btn-primary',
+                    'style' => 'background:#6c63ff; border-color:#6c63ff;'
+                ]);
+                echo html_writer::end_tag('div');
+                echo html_writer::end_tag('div');
+                
+                // Add a "Cambiar instrumento" button to reset the state
+                $reset_url = new moodle_url($PAGE->url, array_merge($link_params, ['step' => 4, 'confirmed' => 0]));
+                echo html_writer::link($reset_url, '↺ Cambiar Instrumento', [
+                    'class' => 'areteia-btn', 
+                    'style' => 'font-size:11px; margin-top:10px; opacity:0.7;'
+                ]);
 
-            // Warn before destroying downstream content
-            if (!empty(session_manager::get('inst_content'))
-                && $instrument !== ''
-                && $effective_sel !== $instrument
-            ) {
-                $btn_attrs['data-confirm'] = '¡Atención! Confirmar este instrumento eliminará permanentemente la evaluación y rúbrica que tenías generada. ¿Estás seguro?';
+            } else {
+                // Navigation state: offer "Confirmar"
+                $btn_attrs = ['class' => 'areteia-btn areteia-btn-primary'];
+                $btn_label = 'Confirmar Instrumento →';
+
+                // Warn before destroying downstream content
+                if (!empty(session_manager::get('inst_content'))
+                    && $instrument !== ''
+                    && $effective_sel !== $instrument
+                ) {
+                    $btn_attrs['data-confirm'] = '¡Atención! Confirmar este instrumento eliminará permanentemente la evaluación y rúbrica que tenías generada. ¿Estás seguro?';
+                }
+
+                $confirm_url = new moodle_url($PAGE->url, array_merge($link_params, [
+                    'step'       => 4,
+                    'confirmed'  => 1,
+                    'instrument' => $effective_sel,
+                ]));
+                echo html_writer::link($confirm_url, $btn_label, $btn_attrs);
             }
-
-            $next_url = new moodle_url($PAGE->url, array_merge($link_params, [
-                'step'       => 5,
-                'instrument' => $effective_sel,
-            ]));
-            echo html_writer::link($next_url, $btn_label, $btn_attrs);
         } else {
             echo html_writer::tag('span', 'Selecciona un instrumento para continuar', [
                 'class' => 'areteia-btn disabled',
@@ -220,6 +274,9 @@ class step4 {
 
             if (!empty($sugs)) {
                 session_manager::set('s_sugs', json_encode($sugs));
+                if (!empty($res_data->usage)) {
+                    session_manager::set('s4_usage', (array)$res_data->usage);
+                }
             }
             return $sugs;
         }

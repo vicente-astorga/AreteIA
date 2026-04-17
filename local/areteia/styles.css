@@ -853,3 +853,105 @@ textarea[name="feedback"]:focus {
     border-color: #144d86;
     color: #144d86;
 }
+
+/* --- Improved Item Visualization --- */
+.item-card {
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.item-card:hover {
+    transform: translateX(4px);
+    box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+}
+
+.item-rich-content {
+    background: #fdfdfb;
+    border: 1px solid #eee;
+    padding: 15px;
+    border-radius: 10px;
+    margin: 10px 0;
+}
+
+.item-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    margin-bottom: 5px;
+    background: #fff;
+    border: 1px solid #f0efeb;
+    font-size: 13px;
+    color: #555;
+}
+
+.item-option i {
+    color: #6c63ff;
+    font-size: 14px;
+}
+
+.item-option.is-correct {
+    background: #f0fff4;
+    border-color: #a3d9b8;
+    color: #1e7850;
+}
+
+.item-vf-badge {
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: bold;
+    text-transform: uppercase;
+    margin-right: 8px;
+}
+
+.item-vf-v { background: #d4edda; color: #1e7850; }
+.item-vf-f { background: #fce8e6; color: #d93025; }
+
+/* --- Per-item Adjustment UI --- */
+.item-adjust-trigger {
+    font-size: 11px;
+    color: #6c63ff;
+    cursor: pointer;
+    background: none;
+    border: 1px solid #6c63ff;
+    padding: 2px 8px;
+    border-radius: 4px;
+    transition: all 0.2s;
+    margin-top: 10px;
+}
+
+.item-adjust-trigger:hover {
+    background: #6c63ff;
+    color: #fff;
+}
+
+.item-adjust-tray {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease-out;
+    margin-top: 5px;
+}
+
+.item-adjust-tray.active {
+    max-height: 300px;
+    border-top: 1px solid #eee;
+    padding-top: 10px;
+}
+
+.item-adjust-textarea {
+    width: 100%;
+    min-height: 60px;
+    border-radius: 6px;
+    border: 1px solid #ddd;
+    padding: 8px;
+    font-size: 12px;
+    margin-bottom: 8px;
+    background: #fff;
+}
+
+.item-adjust-textarea:focus {
+    border-color: #6c63ff;
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(108, 99, 255, 0.1);
+}

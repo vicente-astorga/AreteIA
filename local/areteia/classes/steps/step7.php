@@ -55,17 +55,33 @@ class step7 {
         ]);
 
         // Instrument preview
-        echo html_writer::tag('div', '<strong>Consignas:</strong>', [
+        echo html_writer::tag('div', '<strong>Consignas e Ítems:</strong>', [
             'style' => 'font-size:13px; font-weight:bold; margin-bottom:5px;',
         ]);
-        $preview_inst = mb_strimwidth($inst_content, 0, 500, '...');
-        echo html_writer::tag('div',
-            format_text($preview_inst, FORMAT_MARKDOWN, ['context' => $context]),
-            [
-                'class' => 'areteia-markdown-content',
-                'style' => 'font-size:12px; background:#fcfcfc; padding:10px; border-radius:8px; margin-bottom:15px; border:1px solid #eee;',
-            ]
-        );
+        
+        $final_json = session_manager::get('final_selection_json', '');
+        if (!empty($final_json)) {
+            $data = json_decode($final_json, true);
+            echo html_writer::start_tag('div', [
+                'style' => 'font-size:12px; background:#fcfcfc; padding:15px; border-radius:8px; margin-bottom:15px; border:1px solid #eee; max-height:300px; overflow-y:auto;'
+            ]);
+            foreach (($data['items'] ?? []) as $index => $item) {
+                echo html_writer::start_tag('div', ['style' => 'margin-bottom:10px; border-bottom:1px solid #f0f0f0; padding-bottom:10px;']);
+                echo html_writer::tag('div', '<strong>' . ($index + 1) . '. ' . s($item['type']) . '</strong>', ['style' => 'color:#6c63ff; font-size:11px;']);
+                echo html_writer::tag('div', format_text($item['consiga'] ?? '', FORMAT_MARKDOWN));
+                echo html_writer::end_tag('div');
+            }
+            echo html_writer::end_tag('div');
+        } else {
+            $preview_inst = mb_strimwidth($inst_content, 0, 500, '...');
+            echo html_writer::tag('div',
+                format_text($preview_inst, FORMAT_MARKDOWN, ['context' => $context]),
+                [
+                    'class' => 'areteia-markdown-content',
+                    'style' => 'font-size:12px; background:#fcfcfc; padding:10px; border-radius:8px; margin-bottom:15px; border:1px solid #eee;',
+                ]
+            );
+        }
 
         // Rubric preview
         echo html_writer::tag('div', '<strong>Rúbrica:</strong>', [
@@ -80,6 +96,31 @@ class step7 {
             ]
         );
         echo html_writer::end_tag('div');
+
+        // Total Usage Summary
+        $u4 = session_manager::get('s4_usage', []);
+        $u5 = session_manager::get('s5_usage', []);
+        $u7 = session_manager::get('s7_usage', []); // For future rubric gen
+
+        $total_in  = ($u4['input_tokens'] ?? 0) + ($u5['input_tokens'] ?? 0) + ($u7['input_tokens'] ?? 0);
+        $total_out = ($u4['output_tokens'] ?? 0) + ($u5['output_tokens'] ?? 0) + ($u7['output_tokens'] ?? 0);
+        
+        if ($total_in > 0) {
+            echo html_writer::start_tag('div', [
+                'class' => 'areteia-card',
+                'style' => 'background:rgba(40, 167, 69, 0.05); border:1px solid rgba(40, 167, 69, 0.1); margin-top:20px;'
+            ]);
+            echo html_writer::tag('strong', '📊 Resumen de Consumo IA', ['style' => 'display:block; margin-bottom:10px; color:#28a745;']);
+            echo step_renderer::render_ai_usage_badge([
+                'input_tokens' => $total_in,
+                'output_tokens' => $total_out,
+                'total_tokens' => $total_in + $total_out
+            ]);
+            echo html_writer::tag('p', 'Este costo representa la inversión en diseño pedagógico asistido por IA aplicada a este curso.', [
+                'style' => 'font-size:10px; color:#777; margin-top:10px; font-style:italic;'
+            ]);
+            echo html_writer::end_tag('div');
+        }
 
         // Navigation
         $prev_url   = new moodle_url($PAGE->url, ['step' => 6]);

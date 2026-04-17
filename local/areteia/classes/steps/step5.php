@@ -7,6 +7,7 @@ use html_writer;
 use moodle_url;
 use local_areteia\session_manager;
 use local_areteia\rag_client;
+use local_areteia\step_renderer;
 
 /**
  * Step 5 — Diseño del instrumento.
@@ -15,14 +16,24 @@ use local_areteia\rag_client;
 class step5 {
 
     public static function render(array $ctx): void {
-        global $PAGE;
+        global $PAGE, $OUTPUT;
 
         $id         = $ctx['id'];
         $context    = $ctx['context'];
         $do_gen     = optional_param('do_gen', 0, PARAM_INT);
+        $num_items  = optional_param('num_items', 5, PARAM_INT);
         $instrument = session_manager::get('instrument', '');
+        if (empty($instrument)) {
+            $instrument = optional_param('instrument', '', PARAM_TEXT);
+        }
         $d2         = session_manager::get('d2', '');
         $inst_content = session_manager::get('inst_content', '');
+        
+        // Auto-trigger generation if content is empty and no explicit command is given
+        if (empty($inst_content) && !$do_gen) {
+            $do_gen = 1;
+        }
+        $usage = session_manager::get('s5_usage', null);
 
         $link_params = ['id' => $id];
 
@@ -31,6 +42,7 @@ class step5 {
             $feedback = optional_param('feedback', '', PARAM_TEXT);
             $res_data = rag_client::generate([
                 'course_id'         => $id,
+                'course_title'      => $PAGE->course->fullname,
                 'step'              => 5,
                 'objective'         => $d2,
                 'objective_json'    => session_manager::get('d2_json', ''),
@@ -38,11 +50,19 @@ class step5 {
                 'd3_function'       => session_manager::get('d3', ''),
                 'd4_modality'       => session_manager::get('d4', ''),
                 'chosen_instrument' => $instrument,
+                'num_items'         => $num_items,
                 'feedback'          => $feedback
             ]);
             if ($res_data && $res_data->status == 'success') {
                 $inst_content = json_encode($res_data->output);
                 session_manager::set('inst_content', $inst_content);
+                if (!empty($res_data->usage)) {
+                    session_manager::set('s5_usage', (array)$res_data->usage);
+                }
+                
+                // PRG Pattern: Redirect to clean URL to prevent redundant generation on reload
+                $clean_url = new moodle_url($PAGE->url, ['id' => $id, 'step' => 5]);
+                redirect($clean_url);
             } else {
                 $err = $res_data->message ?? 'Error al generar el diseño.';
                 if (!empty($res_data->reason)) $err .= " Motivo: " . $res_data->reason;
@@ -51,8 +71,13 @@ class step5 {
             }
         }
 
-        echo html_writer::tag('span', 'Paso 5 — Diseño del instrumento', ['class' => 'areteia-tag t-ia']);
-        echo html_writer::tag('p', 'Construcción pedagógica del instrumento', ['class' => 'areteia-stitle']);
+        echo html_writer::tag('span', 'Paso 5 — Selección de Ítems', ['class' => 'areteia-tag t-ia']);
+        echo html_writer::tag('p', 'Revisa y selecciona los mejores ítems para tu evaluación', ['class' => 'areteia-stitle']);
+        
+        step_renderer::render_rag_info();
+
+        $usage = session_manager::get('s5_usage', null);
+        echo \local_areteia\step_renderer::render_ai_usage_badge($usage);
 
         // Instrument summary card
         echo html_writer::start_tag('div', [
@@ -66,83 +91,158 @@ class step5 {
         echo html_writer::end_tag('div');
 
         if (empty($inst_content)) {
-            // ... same generate button ...
             echo html_writer::start_tag('div', [
                 'style' => 'text-align:center; padding:40px; border:2px dashed #eee; border-radius:15px;',
             ]);
             echo html_writer::tag('p',
-                'La IA está lista para redactar las consignas e ítems de tu evaluación.',
+                'La IA generará una lista de ítems propuestos. Podrás elegir con cuáles quedarte.',
                 ['style' => 'color:#777; margin-bottom:20px;']
             );
             $gen_url = new moodle_url($PAGE->url, array_merge($link_params, ['step' => 5, 'do_gen' => 1]));
             echo html_writer::start_tag('div', ['style' => 'display:flex; justify-content:center; align-items:center; gap:10px;']);
             echo \local_areteia\step_renderer::render_preview_button(5);
-            echo html_writer::link($gen_url, '✨ Generar Diseño con IA', [
+            echo html_writer::link($gen_url, '✨ Generar Propuestas con IA', [
                 'class' => 'areteia-btn areteia-btn-primary',
                 'style' => 'padding:12px 25px;',
             ]);
             echo html_writer::end_tag('div');
             echo html_writer::end_tag('div');
         } else {
-            // Feedback area for iteration
-            echo html_writer::start_tag('div', ['class' => 'areteia-card', 'style' => 'background:#fffcf5; border:1px solid #faeeda; padding:15px; margin-bottom:20px;']);
-            echo html_writer::tag('strong', '¿Quieres ajustar el diseño?+', ['style' => 'display:block; margin-bottom:10px; font-size:12px; color:#854f0b;']);
-            echo html_writer::tag('textarea', '', [
-                'name' => 'feedback',
-                'class' => 'form-control w-100 mb-2',
-                'placeholder' => 'Ej: Haz que las preguntas de RECORDAR sean de selección múltiple...',
-                'rows' => 2
-            ]);
-            echo html_writer::start_tag('div', ['style' => 'display:flex; gap:10px; align-items:center;']);
-            echo \local_areteia\step_renderer::render_preview_button(5);
-            $adjust_url = new moodle_url($PAGE->url, array_merge($link_params, ['step' => 5, 'do_gen' => 1]));
-            echo html_writer::link($adjust_url, 'Ajustar Diseño ✨', [
-                'class' => 'areteia-btn',
-                'style' => 'font-size:12px;',
-                'data-adjust' => '1'
-            ]);
-            echo html_writer::end_tag('div');
-            echo html_writer::end_tag('div');
+            // Global feedback removed in favor of per-item adjustment
 
             // Parse and render structured content
             $data = json_decode($inst_content, true);
             if (!$data || !is_array($data)) {
-                // Fallback for old markdown content if any
-                echo html_writer::start_tag('div', ['class' => 'areteia-card', 'style' => 'margin-bottom:20px;']);
-                echo format_text($inst_content, FORMAT_MARKDOWN, ['context' => $context]);
-                echo html_writer::end_tag('div');
+                echo html_writer::tag('div', 'Error decodificando la respuesta de la IA.', ['class' => 'alert alert-danger']);
             } else {
-                echo html_writer::tag('h3', $data['title'] ?? 'Propuesta de Evaluación', ['style' => 'color:#185fa5; margin-bottom:15px;']);
+                echo html_writer::tag('h3', $data['title'] ?? 'Propuesta de Ítems', ['style' => 'color:#185fa5; margin-bottom:15px;']);
                 
-                // Instructions
-                echo html_writer::start_tag('div', ['class' => 'areteia-note', 'style' => 'margin-bottom:20px;']);
-                echo html_writer::tag('strong', 'Instrucciones para el estudiante:', ['style' => 'display:block; margin-bottom:5px;']);
-                echo format_text($data['instructions'] ?? '', FORMAT_MARKDOWN, ['context' => $context]);
-                echo html_writer::end_tag('div');
-
-                // Items list
+                // Form for item selection
+                echo html_writer::start_tag('form', ['id' => 'item-selection-form']);
                 echo html_writer::start_tag('div', ['style' => 'display:flex; flex-direction:column; gap:15px; margin-bottom:20px;']);
+                
                 foreach (($data['items'] ?? []) as $index => $item) {
-                    echo html_writer::start_tag('div', ['class' => 'areteia-card', 'style' => 'padding:15px; border-left:4px solid #185fa5;']);
-                    echo html_writer::start_tag('div', ['style' => 'display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px;']);
-                    echo html_writer::tag('span', 'Pregunta ' . ($index + 1), ['style' => 'font-weight:bold; color:#185fa5;']);
-                    echo html_writer::start_tag('div', ['style' => 'display:flex; gap:5px;']);
-                    echo html_writer::tag('span', $item['bloom_level'], ['class' => 'areteia-tag', 'style' => 'margin-bottom:0; background:#e8f0fe; color:#1a73e8; font-size:9px;']);
-                    echo html_writer::tag('span', $item['points'] . ' pts', ['class' => 'areteia-tag', 'style' => 'margin-bottom:0; background:#e6f4ea; color:#1e8e3e; font-size:9px;']);
+                    $item_id = "item_" . $index;
+                    $type = strtolower($item['type'] ?? '');
+                    
+                    echo html_writer::start_tag('div', [
+                        'class' => 'areteia-card item-card',
+                        'style' => 'padding:20px; border-left:4px solid #6c63ff; margin-bottom:15px; position:relative;'
+                    ]);
+                    
+                    echo html_writer::start_tag('div', ['style' => 'display:flex; gap:15px; align-items:flex-start;']);
+                    
+                    // Selection Checkbox
+                    echo html_writer::checkbox('selected_items[]', $index, true, '', [
+                        'id' => $item_id,
+                        'class' => 'item-cb',
+                        'style' => 'transform:scale(1.4); margin-top:5px;'
+                    ]);
+                    
+                    echo html_writer::start_tag('div', ['style' => 'flex-grow:1;']);
+                    
+                    // Header: Type + Status Badges
+                    echo html_writer::start_tag('div', ['style' => 'display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;']);
+                    echo html_writer::tag('span', $item['type'] ?? 'Ítem ' . ($index + 1), [
+                        'style' => 'font-weight:700; color:#185fa5; text-transform:uppercase; font-size:11px; letter-spacing:0.05em;'
+                    ]);
+                    echo html_writer::start_tag('div', ['style' => 'display:flex; gap:6px;']);
+                    echo html_writer::tag('span', $item['difficulty'] ?? 'N/A', ['class' => 'areteia-tag', 'style' => 'background:#fff3e0; color:#e65100; font-size:10px;']);
+                    if (!empty($item['points'])) {
+                        echo html_writer::tag('span', $item['points'] . ' pts', ['class' => 'areteia-tag', 'style' => 'background:#e6f4ea; color:#1e8e3e; font-size:10px;']);
+                    }
                     echo html_writer::end_tag('div');
                     echo html_writer::end_tag('div');
-                    echo html_writer::tag('div', format_text($item['text'], FORMAT_MARKDOWN, ['context' => $context]));
+                    
+                    // Consiga (Question Body)
+                    echo html_writer::start_tag('div', ['class' => 'item-body-text', 'style' => 'font-size:14px; margin-bottom:15px; color:#1a1a1a; line-height:1.6;']);
+                    echo format_text($item['consiga'] ?? 'Sin texto', FORMAT_MARKDOWN);
                     echo html_writer::end_tag('div');
+                    
+                    // --- RICH VISUALIZATION BY TYPE ---
+                    echo html_writer::start_tag('div', ['class' => 'item-rich-content']);
+                    
+                    if (strpos($type, 'múltiple') !== false || strpos($type, 'selección') !== false || strpos($type, 'cerrada') !== false) {
+                        // Options list
+                        if (!empty($item['alternativas'])) {
+                            foreach ($item['alternativas'] as $opt) {
+                                echo html_writer::start_tag('div', ['class' => 'item-option']);
+                                echo html_writer::tag('i', '○', ['style' => 'font-style:normal; opacity:0.5;']);
+                                echo s($opt);
+                                echo html_writer::end_tag('div');
+                            }
+                        }
+                    } else if (strpos($type, 'verdadero') !== false) {
+                        // True/False badges
+                        echo html_writer::start_tag('div', ['style' => 'display:flex; gap:10px;']);
+                        echo html_writer::tag('span', 'Verdadero', ['class' => 'item-vf-badge item-vf-v']);
+                        echo html_writer::tag('span', 'Falso', ['class' => 'item-vf-badge item-vf-f']);
+                        echo html_writer::end_tag('div');
+                    } else if (strpos($type, 'abierta') !== false || strpos($type, 'ensayo') !== false) {
+                        // Open box placeholder
+                        echo html_writer::tag('div', 'El estudiante redactará su respuesta aquí...', [
+                            'style' => 'border:1px dashed #ccc; padding:15px; border-radius:8px; color:#999; font-style:italic; font-size:12px;'
+                        ]);
+                    } else {
+                        // Default Fallback
+                        if (!empty($item['alternativas'])) {
+                            foreach ($item['alternativas'] as $opt) {
+                                echo html_writer::tag('div', "• " . s($opt), ['style' => 'font-size:13px; color:#555; margin-bottom:4px;']);
+                            }
+                        }
+                    }
+                    echo html_writer::end_tag('div');
+                    
+                    // Objectives and Meta
+                    if (!empty($item['objectives'])) {
+                        echo html_writer::tag('div', '🎯 <strong>Objetivos:</strong> ' . implode(', ', array_map('s', $item['objectives'])), [
+                            'style' => 'font-size:11px; color:#777; margin-top:10px;'
+                        ]);
+                    }
+
+                    // --- PER-ITEM ADJUSTMENT UI ---
+                    echo html_writer::start_tag('div', ['style' => 'margin-top:15px; border-top:1px solid #f0f0f0; padding-top:10px;']);
+                    echo html_writer::tag('button', 'Ajustar con IA ✨', [
+                        'type' => 'button',
+                        'class' => 'item-adjust-trigger',
+                        'data-index' => $index
+                    ]);
+                    
+                    echo html_writer::start_tag('div', [
+                        'class' => 'item-adjust-tray',
+                        'data-index' => $index
+                    ]);
+                    echo html_writer::tag('textarea', '', [
+                        'class' => 'item-adjust-textarea',
+                        'placeholder' => 'Ej: Hazla más difícil, cambia el enfoque a la praxis...'
+                    ]);
+                    $adj_url = new moodle_url($PAGE->url, array_merge($link_params, ['step' => 5, 'do_gen' => 1]));
+                    echo html_writer::link($adj_url, 'Actualizar ítem', [
+                        'class' => 'areteia-btn areteia-btn-primary',
+                        'style' => 'font-size:11px; padding:4px 12px;',
+                        'data-adjust' => '1',
+                        'data-item-index' => $index
+                    ]);
+                    echo html_writer::end_tag('div');
+                    echo html_writer::end_tag('div');
+                    
+                    echo html_writer::end_tag('div'); // body div
+                    echo html_writer::end_tag('div'); // flex container div
+                    echo html_writer::end_tag('div'); // card container div
                 }
                 echo html_writer::end_tag('div');
-
+                
                 // Justification
                 if (!empty($data['justification'])) {
-                    echo html_writer::start_tag('div', ['style' => 'font-size:12px; color:#666; font-style:italic; padding:10px; background:#f9f9f9; border-radius:8px;']);
-                    echo html_writer::tag('strong', 'Justificación Pedagógica: ');
+                    echo html_writer::start_tag('div', ['style' => 'font-size:12px; color:#666; font-style:italic; padding:15px; background:#f9f9f9; border-radius:10px; margin-bottom:20px; border:1px solid #eee;']);
+                    echo html_writer::tag('strong', '💡 Justificación Pedagógica: ', ['style' => 'color:#185fa5;']);
                     echo s($data['justification']);
                     echo html_writer::end_tag('div');
                 }
+                
+                // Final selection JSON hidden input (populated by JS)
+                echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'final_json', 'id' => 'final_json_input']);
+                echo html_writer::end_tag('form');
             }
 
             // Inner nav
@@ -156,23 +256,62 @@ class step5 {
                 ['class' => 'areteia-btn']
             );
 
-            // Regenerate button
-            $regen_url = new moodle_url($PAGE->url, array_merge($link_params, [
-                'step'         => 5,
-                'do_gen'       => 1,
-                'inst_content' => ' ',
-            ]));
-            echo html_writer::link($regen_url, 'Regenerar ✨', [
-                'class' => 'areteia-btn',
-                'style' => 'margin-left:auto; margin-right:10px;',
+            // Continue to Step 6 button
+            $step6_url = new moodle_url($PAGE->url, array_merge($link_params, ['step' => 6]));
+            echo html_writer::link('#', 'Ver Selección Final →', [
+                'id'    => 'btn-go-to-step6',
+                'class' => 'areteia-btn areteia-btn-primary',
+                'style' => 'background:#28a745; border-color:#28a745;'
             ]);
-
-            echo html_writer::link(
-                new moodle_url($PAGE->url, array_merge($link_params, ['step' => 6])),
-                'Continuar a Rúbrica →',
-                ['class' => 'areteia-btn areteia-btn-primary']
-            );
+            
             echo html_writer::end_tag('div');
+            
+            // Script to handle item selection for step 6
+            echo '
+            <script>
+            (function() {
+                const btn = document.getElementById("btn-go-to-step6");
+                if (!btn) return;
+                
+                btn.onclick = function(e) {
+                    e.preventDefault();
+                    const form = document.getElementById("item-selection-form");
+                    const checked = Array.from(form.querySelectorAll(".item-cb:checked")).map(cb => parseInt(cb.value));
+                    
+                    if (checked.length === 0) {
+                        alert("Por favor selecciona al menos un ítem.");
+                        return;
+                    }
+                    
+                    const allData = ' . json_encode($data) . ';
+                    const selectedData = {
+                        title: allData.title,
+                        justification: allData.justification,
+                        items: allData.items.filter((_, idx) => checked.includes(idx))
+                    };
+                    
+                    // Create a hidden form to POST to step 6
+                    const postForm = document.createElement("form");
+                    postForm.method = "POST";
+                    postForm.action = "' . $step6_url->out(false) . '";
+                    
+                    const input = document.createElement("input");
+                    input.type = "hidden";
+                    input.name = "selection_json";
+                    input.value = JSON.stringify(selectedData);
+                    postForm.appendChild(input);
+                    
+                    document.body.appendChild(postForm);
+                    
+                    // Trigger AJAX navigation if areteia_app context exists (optional, keeping it simple with form post)
+                    // But our areteia.js intercepts links, not form posts usually.
+                    // We will just let it post normally or use areteia.js logic.
+                    postForm.submit();
+                };
+            })();
+            </script>
+            ';
+
             echo html_writer::end_tag('div');
         }
     }

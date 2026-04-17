@@ -21,6 +21,7 @@ class step_renderer {
         'eval' => [
             'label' => 'Crear evaluación',
             'steps' => [3, 4, 5, 7],
+            // 'steps' => [2, 3, 4, 5, 6, 7],
             'icon'  => '📝'
         ],
         'crit' => [
@@ -260,5 +261,42 @@ class step_renderer {
             </div>
         </div>
         ';
+    }
+
+    /**
+     * Render a premium badge showing token usage and estimated cost.
+     * 
+     * @param array|object|null $usage {input_tokens, output_tokens, total_tokens}
+     */
+    public static function render_ai_usage_badge($usage = null): string {
+        if (!$usage) return '';
+        
+        $usage = (object)$usage;
+        $in  = $usage->input_tokens ?? 0;
+        $out = $usage->output_tokens ?? 0;
+        $tot = $usage->total_tokens ?? 0;
+
+        $html = \html_writer::start_tag('div', [
+            'class' => 'areteia-usage-badge',
+            'style' => 'display:inline-flex; align-items:center; gap:8px; padding:6px 14px; background:rgba(108, 99, 255, 0.08); border:1px solid rgba(108, 99, 255, 0.2); border-radius:100px; font-size:11px; color:#5549d6; margin-top:10px; margin-bottom:10px;'
+        ]);
+        $html .= \html_writer::tag('span', '✨', ['style' => 'font-size:14px;']);
+        $html .= \html_writer::start_tag('div', ['style' => 'line-height:1.2;']);
+        $html .= \html_writer::tag('div', "Consumo: <strong>" . number_format($tot) . " tokens</strong>", ['style' => 'font-weight:600;']);
+        $html .= \html_writer::tag('div', "Input: " . number_format($in) . " | Output: " . number_format($out), ['style' => 'font-size:9px; opacity:0.8;']);
+        $html .= \html_writer::end_tag('div');
+        $html .= \html_writer::end_tag('div');
+
+        return $html;
+    }
+
+    /**
+     * Render an informative note about RAG usage based on objectives.
+     */
+    public static function render_rag_info(): void {
+        echo \html_writer::start_tag('div', ['class' => 'areteia-note', 'style' => 'margin-top:10px;']);
+        echo \html_writer::tag('strong', '💡 Alineación Pedagógica Inteligente: ');
+        echo 'La IA ha analizado tus objetivos y ha extraído fragmentos relevantes de los materiales de tu curso para asegurar que esta propuesta esté 100% alineada con tus contenidos.';
+        echo \html_writer::end_tag('div');
     }
 }

@@ -3,3 +3,4 @@ src/
 moodledata/
 *.pyc
 areteia_ai/.fastembed_cache/
+*.md

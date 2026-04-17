@@ -37,20 +37,41 @@ document.addEventListener("click", e => {
     captureStep3State(url);
 
     // Capture feedback for iterative adjustment (Steps 4, 5, 6)
-    const feedbackArea = document.querySelector('textarea[name="feedback"]');
-    if (feedbackArea && link.dataset.adjust === "1") {
-        url.searchParams.set("feedback", feedbackArea.value.trim());
+    // New: If link has item-index, look for feedback in that item's specific textarea
+    if (link.dataset.adjust === "1") {
+        let feedback = "";
+        if (link.dataset.itemIndex !== undefined) {
+            const tray = document.querySelector(`.item-adjust-tray[data-index="${link.dataset.itemIndex}"]`);
+            const textarea = tray ? tray.querySelector('textarea') : null;
+            feedback = textarea ? textarea.value.trim() : "";
+            if (feedback) {
+                // Prepend item index so backend knows which one to focus on
+                feedback = `[Ítem ${link.dataset.itemIndex}] ${feedback}`;
+                url.searchParams.set("item_index", link.dataset.itemIndex);
+            }
+        } else {
+            const feedbackArea = document.querySelector('textarea[name="feedback"]');
+            feedback = feedbackArea ? feedbackArea.value.trim() : "";
+        }
+        if (feedback) url.searchParams.set("feedback", feedback);
     }
 
     // Capture material selection in Step 1 if starting ingestion
     const options = { method: 'GET' };
-    
+
+    // Capture num_items for Step 5 generation
+    const numItemsInput = document.getElementById('num_items_input');
+
+    if (numItemsInput && (link.id === 'btn-generate-items' || link.dataset.pStep === "5")) {
+        url.searchParams.set("num_items", numItemsInput.value);
+    }
+
     // Prepare body for POST if it's a form or a specific action
     const isIngest = url.searchParams.get("action") === "ingest";
     const isInject = url.searchParams.get("action") === "inject_quiz";
-    
+
     if (url.searchParams.has("d2_json") || isIngest || isInject || isFormSubmit) {
-        
+
         // Guard: if ingestion, ensure at least one file is selected (Step 1)
         if (isIngest) {
             const checkedFiles = document.querySelectorAll('.tree-cb[data-type="file"]:checked');
@@ -66,10 +87,10 @@ document.addEventListener("click", e => {
         options.method = 'POST';
         options.headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
         const body = new URLSearchParams();
-        
+
         // 1. All existing URL search params
         url.searchParams.forEach((val, key) => body.append(key, val));
-        
+
         // 2. All form data if it's a form submission
         if (isFormSubmit && formElement) {
             const formData = new FormData(formElement);
@@ -89,9 +110,9 @@ document.addEventListener("click", e => {
         if (!r.ok) throw new Error("Server error " + r.status);
         const finalUrl = new URL(r.url);
         finalUrl.searchParams.delete("ajax");
-        
+
         const isStepChange = finalUrl.searchParams.get("step") !== new URL(location.href).searchParams.get("step");
-        
+
         window.history.pushState({}, "", finalUrl.toString());
         return r.text().then(html => ({ html, isStepChange }));
     }).then(({ html, isStepChange }) => {
@@ -102,7 +123,7 @@ document.addEventListener("click", e => {
         } else {
             surgicalUpdate(html);
         }
-        
+
         initStep3Reactivity();
         initGenerativeLoading();
         initTreeCheckboxes();
@@ -194,16 +215,16 @@ function updateParentStates(startCb) {
 
     while (current) {
         const parentCb = current.querySelector('.tree-row .tree-cb');
-        
+
         const treeChildren = Array.from(current.children).find(el => el.classList.contains('tree-children'));
         if (treeChildren && parentCb) {
             const childNodes = Array.from(treeChildren.children).filter(el => el.classList.contains('tree-node'));
             const siblingNodes = childNodes.map(node => node.querySelector('.tree-row .tree-cb')).filter(cb => cb);
-            
+
             if (siblingNodes.length > 0) {
                 const checkedCount = siblingNodes.filter(c => c.checked).length;
                 const isIndeterminate = siblingNodes.some(c => c.indeterminate);
-                
+
                 if (checkedCount === 0) {
                     parentCb.checked = false;
                     parentCb.indeterminate = isIndeterminate;
@@ -234,7 +255,7 @@ function initStep3Reactivity() {
     const updateBtn = () => {
         const rows = document.querySelectorAll('.objective-row');
         let hasValidObjective = false;
-        
+
         rows.forEach(row => {
             const text = row.querySelector('.objective-text-input').value.trim();
             if (text.length > 0) hasValidObjective = true;
@@ -266,15 +287,15 @@ function initStep3Reactivity() {
 
             const newRow = firstRow.cloneNode(true);
             newRow.dataset.index = count;
-            
+
             // Clear values
             const select = newRow.querySelector('select');
             const input = newRow.querySelector('input');
             select.value = "";
             input.value = "";
-            
+
             list.appendChild(newRow);
-            
+
             // Re-bind listeners
             bindRowListeners(newRow);
             updateBtn();
@@ -311,7 +332,7 @@ function initStep3Reactivity() {
             updateBtn();
             triggerAutoSave();
         });
-        
+
         if (removeBtn) {
             removeBtn.addEventListener('click', () => {
                 if (document.querySelectorAll('.objective-row').length > 1) {
@@ -430,24 +451,42 @@ document.addEventListener("DOMContentLoaded", () => {
     initRagSearchTest();
     initIngestionForm();
     initPromptPreview();
+    initItemAdjustmentUI();
 });
+
+/**
+ * Step 5: Item Adjustment UI Toggling
+ */
+function initItemAdjustmentUI() {
+    document.addEventListener("click", e => {
+        const trigger = e.target.closest(".item-adjust-trigger");
+        if (!trigger) return;
+
+        const index = trigger.dataset.index;
+        const tray = document.querySelector(`.item-adjust-tray[data-index="${index}"]`);
+        if (tray) {
+            tray.classList.toggle("active");
+            trigger.innerHTML = tray.classList.contains("active") ? "Cancelar ✕" : "Ajustar con IA ✨";
+        }
+    });
+}
 
 /**
  * AI Prompt Preview Logic
  */
 function initPromptPreview() {
     // 1. Modal Close logic
-    window.closePromptPreview = function() {
+    window.closePromptPreview = function () {
         const overlay = document.getElementById("prompt-preview-overlay");
         if (overlay) overlay.classList.remove("active");
     };
 
     // 2. Copy logic
-    window.copyPromptToClipboard = function() {
+    window.copyPromptToClipboard = function () {
         const system = document.getElementById("preview-system-content").innerText;
         const user = document.getElementById("preview-user-content").innerText;
         const full = "SYSTEM PROMPT:\n" + system + "\n\nUSER PROMPT:\n" + user;
-        
+
         navigator.clipboard.writeText(full).then(() => {
             const btn = document.querySelector(".btn-copy-prompt");
             if (btn) {
@@ -466,7 +505,7 @@ function initPromptPreview() {
         const step = btn.dataset.pStep;
         const feedbackArea = document.querySelector('textarea[name="feedback"]');
         const feedback = feedbackArea ? feedbackArea.value : "";
-        
+
         btn.innerHTML = "⏳ Cargando...";
         btn.style.opacity = "0.7";
 
@@ -476,10 +515,16 @@ function initPromptPreview() {
         url.searchParams.set("feedback", feedback);
         url.searchParams.set("ajax", "1");
 
+        // Capture num_items for preview if present
+        const numItemsInput = document.getElementById('num_items_input');
+        if (numItemsInput) {
+            url.searchParams.set("num_items", numItemsInput.value);
+        }
+
         fetch(url).then(r => r.json()).then(res => {
             btn.innerHTML = "👁️ Ver Prompt";
             btn.style.opacity = "1";
-            
+
             if (res.status === "success") {
                 const sysContent = document.getElementById("preview-system-content");
                 const userContent = document.getElementById("preview-user-content");
@@ -517,7 +562,7 @@ function initIngestionForm() {
     if (!form || !input) return;
 
     // Use onsubmit to overwrite any previously attached listeners on AJAX re-loads
-    form.onsubmit = function(e) {
+    form.onsubmit = function (e) {
         // Collect checked file checkboxes
         const selectedFiles = [];
         document.querySelectorAll('.tree-cb[data-type="file"]:checked').forEach(cb => {
@@ -638,7 +683,7 @@ function surgicalUpdate(html, isAutoSave = false) {
     targets.forEach(id => {
         const oldEl = document.getElementById(id);
         let newEl = doc.getElementById(id);
-        
+
         // Special case for next-step-btn which might be inside a list
         if (!newEl) newEl = doc.querySelector(`#${id}`);
 
@@ -678,10 +723,10 @@ function captureStep3State(url) {
     rows.forEach(row => {
         const bloom = row.querySelector('.objective-bloom-select').value;
         const text = row.querySelector('.objective-text-input').value.trim();
-        
+
         // Always save to JSON to preserve UI state (fix: incluso si el texto está vacío)
         structured.push({ bloom, text });
-        
+
         // Only add to combined text for AI if there is content
         if (text) {
             combinedText += (bloom ? `[${bloom}] ` : "") + text + "\n";
@@ -697,7 +742,7 @@ function captureStep3State(url) {
  */
 function debounce(func, wait) {
     let timeout;
-    return function(...args) {
+    return function (...args) {
         clearTimeout(timeout);
         timeout = setTimeout(() => func.apply(this, args), wait);
     };
