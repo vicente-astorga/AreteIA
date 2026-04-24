@@ -216,27 +216,47 @@ class action_handler {
     private static function handle_inject_quiz(int $course_id, \moodle_url $base_url, bool $is_ajax): void {
         $section_num = optional_param('section_num', 0, PARAM_INT);
 
-        // 1. Intentar leer desde la sesión (JSON que guardó la IA)
-        $raw_questions = session_manager::get('quiz_content_json', '');
+        // 1. Obtener el puntaje total máximo solicitado (Ej: 7.0 o 100.0)
+        $max_grade = optional_param('max_grade', 100.0, PARAM_FLOAT);
+
+        // LEER DESDE SESIÓN: Ya no dependemos del payload pesado por POST
+        $raw_selection = session_manager::get('final_selection_json', '');
+
         $questions = [];
-        
-        if (!empty($raw_questions)) {
-            $parsed = json_decode($raw_questions, true);
-            if (is_array($parsed) && count($parsed) > 0) {
-                // Validación básica de que parezca una lista de preguntas
-                if (isset($parsed[0]['type']) && isset($parsed[0]['text'])) {
-                    $questions = $parsed;
+        if (!empty($raw_selection)) {
+            $parsed = json_decode($raw_selection, true);
+            if (is_array($parsed) && !empty($parsed['items'])) {
+                $questions = $parsed['items'];
+                
+                // Read point distribution securely from POST directly
+                $item_points = optional_param_array('item_points', [], PARAM_RAW);
+                foreach ($questions as $idx => &$q) {
+                    if (isset($item_points[$idx])) {
+                        $weight_percentage = (float)$item_points[$idx];
+                        $q['points'] = round(($weight_percentage / 100.0) * $max_grade, 2);
+                    }
                 }
+                unset($q); // break reference reference
+                
+                // Actualizar la sesión con los pesos finales configurados por el usuario antes de inyectar
+                $parsed['items'] = $questions;
+                session_manager::set('final_selection_json', json_encode($parsed));
             }
         }
 
-        // 2. Si no hay preguntas válidas en sesión, usar el fallback
+        // 2. Si no hay preguntas, error
         if (empty($questions)) {
-            $questions = self::get_fake_questions();
+            $redir = new \moodle_url($base_url, [
+                'step'         => 5,
+                'quiz_error'   => 1,
+                'message'      => 'No se detectó una selección válida de ítems.'
+            ]);
+            redirect($redir);
         }
 
         try {
-            $result = \local_areteia\data_provider::create_quiz_activity($course_id, $section_num, $questions);
+            // Se pasa el max_grade además de name (si se desea uno por defecto se pasa null o string custom)
+            $result = \local_areteia\data_provider::create_quiz_activity($course_id, $section_num, $questions, 'Cuestionario AreteIA', $max_grade);
             if (!$result || !isset($result['coursemodule'])) {
                 throw new \moodle_exception('error_creating_quiz', 'local_areteia', '', null, 'Result is empty or invalid');
             }

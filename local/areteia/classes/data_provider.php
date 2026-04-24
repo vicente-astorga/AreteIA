@@ -340,7 +340,8 @@ class data_provider {
         int $courseid,
         int $section_num,
         array $questions,
-        string $name = 'Cuestionario AreteIA'
+        string $name = 'Cuestionario AreteIA',
+        ?float $max_grade = null
     ): array {
         global $CFG, $DB, $USER;
         require_once($CFG->dirroot . '/course/lib.php');
@@ -383,7 +384,7 @@ class data_provider {
         $quiz->navmethod           = 'free';
         $quiz->shuffleanswers      = 1;
         $quiz->sumgrades           = 0;
-        $quiz->grade               = count($questions) * 1.0;
+        $quiz->grade               = $max_grade !== null ? $max_grade : count($questions) * 1.0;
         $quiz->timecreated         = time();
         $quiz->timemodified        = time();
         $quiz->password            = '';
@@ -499,7 +500,7 @@ class data_provider {
                 $slot->page = 1; 
                 $slot->displaynumber = '';
                 $slot->requireprevious = 0;
-                $slot->maxmark = 1.0;
+                $slot->maxmark = isset($q_data['points']) ? (float)$q_data['points'] : 1.0;
                 $slot_id = $DB->insert_record('quiz_slots', $slot);
 
                 // 4b. question_references wiring
@@ -516,19 +517,25 @@ class data_provider {
                 }
             } else {
                 // Fallback for Moodle 3.x
-                quiz_add_quiz_question($qid, $quiz, 0, 1.0);
+                $maxmark = isset($q_data['points']) ? (float)$q_data['points'] : 1.0;
+                quiz_add_quiz_question($qid, $quiz, 0, $maxmark);
             }
         }
 
         // Recalculate sumgrades (sum of maxmark from quiz_slots)
-        quiz_update_sumgrades($quiz);
+        \mod_quiz\grade_calculator::recompute_quiz_sumgrades($quiz);
 
         // Verify sumgrades was updated; if still 0 with questions, force-fix.
         $db_sumgrades = $DB->get_field('quiz', 'sumgrades', ['id' => $quiz->id]);
         if ($db_sumgrades == 0 && count($questions) > 0) {
-            $expected = (float) count($questions);
+            $expected = 0.0;
+            foreach ($questions as $q) {
+                $expected += isset($q['points']) ? (float)$q['points'] : 1.0;
+            }
             $DB->set_field('quiz', 'sumgrades', $expected, ['id' => $quiz->id]);
-            $DB->set_field('quiz', 'grade',     $expected, ['id' => $quiz->id]);
+            if ($max_grade === null) {
+                $DB->set_field('quiz', 'grade', $expected, ['id' => $quiz->id]);
+            }
             error_log('[AreteIA] Force-fixed sumgrades=' . $expected . ' for quiz id=' . $quiz->id);
         }
 
@@ -562,7 +569,7 @@ class data_provider {
         $q->questiontextformat     = FORMAT_HTML;
         $q->generalfeedback        = '';
         $q->generalfeedbackformat  = FORMAT_HTML;
-        $q->defaultmark            = 1.0;
+        $q->defaultmark            = isset($q_data['points']) ? (float)$q_data['points'] : 1.0;
         $q->penalty                = ($q_data['type'] === 'essay') ? 0.0 : 0.3333333;
         $q->qtype                  = $q_data['type'];
         $q->length                 = ($q_data['type'] === 'essay') ? 0 : 1;
@@ -600,6 +607,21 @@ class data_provider {
                 break;
             case 'truefalse':
                 self::create_truefalse_data($q->id, $q_data);
+                break;
+            case 'match':
+                self::create_match_data($q->id, $q_data);
+                break;
+            case 'shortanswer':
+                self::create_shortanswer_data($q->id, $q_data);
+                break;
+            case 'numerical':
+                self::create_numerical_data($q->id, $q_data);
+                break;
+            case 'gapselect':
+                self::create_gapselect_data($q->id, $q_data);
+                break;
+            case 'multianswer':
+                // Cloze questions only need the formatted text in questiontext.
                 break;
             case 'essay':
                 self::create_essay_data($q->id);
@@ -691,6 +713,110 @@ class data_provider {
         $opts->responsetemplateformat  = FORMAT_HTML;
         $opts->maxbytes                = 0;
         $DB->insert_record('qtype_essay_options', $opts);
+    }
+
+    /** Create subquestions and options for a matching question. */
+    private static function create_match_data(int $qid, array $q_data): void {
+        global $DB;
+
+        foreach (($q_data['pairs'] ?? []) as $pair) {
+            $sub = new \stdClass();
+            $sub->questionid = $qid;
+            $sub->questiontext = $pair['premise'];
+            $sub->questiontextformat = FORMAT_HTML;
+            $sub->answertext = $pair['answer'];
+            $DB->insert_record('qtype_match_subquestions', $sub);
+        }
+
+        $opts                              = new \stdClass();
+        $opts->questionid                  = $qid;
+        $opts->shuffleanswers              = 1;
+        $opts->correctfeedback             = 'Correcto.';
+        $opts->correctfeedbackformat       = FORMAT_HTML;
+        $opts->partiallycorrectfeedback    = '';
+        $opts->partiallycorrectfeedbackformat = FORMAT_HTML;
+        $opts->incorrectfeedback           = 'Incorrecto.';
+        $opts->incorrectfeedbackformat     = FORMAT_HTML;
+        $DB->insert_record('qtype_match_options', $opts);
+    }
+
+    /** Create answer and options for a shortanswer question. */
+    private static function create_shortanswer_data(int $qid, array $q_data): void {
+        global $DB;
+
+        $ans                  = new \stdClass();
+        $ans->question        = $qid;
+        $ans->answer          = $q_data['correct'] ?? '';
+        $ans->answerformat    = FORMAT_PLAIN;
+        $ans->fraction        = 1.0;
+        $ans->feedback        = 'Correcto.';
+        $ans->feedbackformat  = FORMAT_HTML;
+        $DB->insert_record('question_answers', $ans);
+
+        $opts               = new \stdClass();
+        $opts->questionid   = $qid;
+        $opts->usecase      = 0; // Case insensitive
+        $DB->insert_record('qtype_shortanswer_options', $opts);
+    }
+
+    /** Create answer and options for a numerical question. */
+    private static function create_numerical_data(int $qid, array $q_data): void {
+        global $DB;
+
+        $ans                  = new \stdClass();
+        $ans->question        = $qid;
+        $ans->answer          = (string)($q_data['correct'] ?? '0');
+        $ans->answerformat    = FORMAT_PLAIN;
+        $ans->fraction        = 1.0;
+        $ans->feedback        = 'Correcto.';
+        $ans->feedbackformat  = FORMAT_HTML;
+        $ans_id = $DB->insert_record('question_answers', $ans);
+
+        // Numerical specific version of the answer
+        $num = new \stdClass();
+        $num->answer   = $ans_id;
+        $num->tolerance = '0.01'; // Default tolerance
+        $DB->insert_record('question_numerical', $num);
+
+        $opts = new \stdClass();
+        $opts->questionid = $qid;
+        $opts->showunits = 0;
+        $opts->unitgradingtype = 0;
+        $opts->unitpenalty = 0.1;
+        $opts->unitsleft = 0;
+        $opts->instructions = '';
+        $opts->instructionsformat = FORMAT_HTML;
+        $DB->insert_record('qtype_numerical_options', $opts);
+    }
+
+    /** Create options for a gapselect (select missing words) question. */
+    private static function create_gapselect_data(int $qid, array $q_data): void {
+        global $DB;
+
+        // Choices go to question_answers, grouped by 'feedback' field (used as group id)
+        if (!empty($q_data['options'])) {
+            foreach ($q_data['options'] as $choice) {
+                $ans                  = new \stdClass();
+                $ans->question        = $qid;
+                $ans->answer          = $choice;
+                $ans->answerformat    = FORMAT_PLAIN;
+                $ans->fraction        = 0.0;
+                $ans->feedback        = '1'; // Group 1
+                $ans->feedbackformat  = FORMAT_PLAIN;
+                $DB->insert_record('question_answers', $ans);
+            }
+        }
+
+        $opts                              = new \stdClass();
+        $opts->questionid                  = $qid;
+        $opts->shuffleanswers              = 1;
+        $opts->correctfeedback             = 'Correcto.';
+        $opts->correctfeedbackformat       = FORMAT_HTML;
+        $opts->partiallycorrectfeedback    = '';
+        $opts->partiallycorrectfeedbackformat = FORMAT_HTML;
+        $opts->incorrectfeedback           = 'Incorrecto.';
+        $opts->incorrectfeedbackformat     = FORMAT_HTML;
+        $DB->insert_record('qtype_gapselect', $opts);
     }
 
     /**

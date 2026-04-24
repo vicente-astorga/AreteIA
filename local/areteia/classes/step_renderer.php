@@ -21,7 +21,6 @@ class step_renderer {
         'eval' => [
             'label' => 'Crear evaluación',
             'steps' => [3, 4, 5, 7],
-            // 'steps' => [2, 3, 4, 5, 6, 7],
             'icon'  => '📝'
         ],
         'crit' => [

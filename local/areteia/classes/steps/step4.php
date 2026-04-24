@@ -89,13 +89,16 @@ class step4 {
             echo html_writer::end_tag('div');
             echo html_writer::end_tag('div');
         } else {
+            $sug_names = array_map(fn($s) => $s['name'] ?? '', $sugs);
+            $is_ai_sel = in_array($sel_sug, $sug_names);
+
             // 1) Resultados (Sugerencias)
             echo html_writer::start_tag('div', [
                 'class' => 'sug-buttons',
                 'style' => 'display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:15px; margin-bottom:30px;',
             ]);
             foreach ($sugs as $s) {
-                self::render_suggestion_button($s, $sel_sug, $instrument, $link_params, $is_locked);
+                self::render_suggestion_button($s, $is_ai_sel ? $sel_sug : '', $instrument, $link_params, $is_locked);
             }
             echo html_writer::end_tag('div');
 
@@ -117,15 +120,37 @@ class step4 {
                     'id' => 'instrument-fallback-select',
                     'class' => 'form-control',
                     'style' => 'flex-grow:1;',
-                    'onchange' => "window.location.href = '" . (new moodle_url($PAGE->url, $link_params))->out(false) . "&step=4&sel_sug=' + this.value"
+                    'data-baseurl' => (new moodle_url($PAGE->url, $link_params))->out(false) . "&step=4"
                 ]);
                 echo html_writer::tag('option', 'Selecciona otro instrumento del catálogo...', ['value' => '']);
                 foreach ($instruments_list as $inst) {
-                    $sel = ($sel_sug == $inst->name || (empty($sel_sug) && $instrument == $inst->name)) ? 'selected' : '';
+                    // Manual selection state: only select if it's NOT an AI suggestion
+                    $sel = (!$is_ai_sel && $sel_sug == $inst->name) ? 'selected' : '';
                     echo html_writer::tag('option', $inst->name, ['value' => $inst->name, 'selected' => $sel]);
                 }
                 echo html_writer::end_tag('select');
                 echo html_writer::end_tag('div');
+
+                // Render definition for manual selection
+                if (!$is_ai_sel && !empty($sel_sug)) {
+                    $selected_def = '';
+                    foreach ($instruments_list as $inst) {
+                        if ($inst->name === $sel_sug) {
+                            $selected_def = $inst->definition;
+                            break;
+                        }
+                    }
+                    if ($selected_def) {
+                        echo html_writer::start_tag('div', [
+                            'class' => 'manual-selection-info',
+                            'style' => 'margin-top:15px; background:#fff; border:1px solid #e0e0e0; padding:15px; border-radius:8px; border-left:4px solid #6c63ff;'
+                        ]);
+                        echo html_writer::tag('span', 'Definición oficial:', ['style' => 'display:block; font-size:10px; text-transform:uppercase; color:#999; font-weight:bold; margin-bottom:5px;']);
+                        echo html_writer::tag('div', $selected_def, ['style' => 'font-size:13px; color:#333; line-height:1.5;']);
+                        echo html_writer::end_tag('div');
+                    }
+                }
+
                 echo html_writer::end_tag('div');
             }
 

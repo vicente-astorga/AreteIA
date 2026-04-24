@@ -8,11 +8,11 @@
  * 4. Loading state management for AI-generation buttons
  */
 document.addEventListener("click", e => {
-    const link = e.target.closest("a.opt, a.s0-card, a.sug-card, a.areteia-btn, a.fb-btn, a.areteia-dot");
+    const link = e.target.closest("a.opt, a.s0-card, a.sug-card, a.areteia-btn, button.areteia-btn, a.fb-btn, a.areteia-dot");
     if (!link || link.classList.contains("external")) return;
 
-    // Skip the ingest button — it is handled exclusively by initIngestionForm() via native form POST
-    if (link.id === 'confirm-ingest-btn') return;
+    // Skip the ingest and publish buttons — handled natively for security (sesskey)
+    if (link.id === 'confirm-ingest-btn' || link.id === 'btn-publish-quiz') return;
 
     // Handle different types of triggers (links vs form buttons)
     let urlString = link.href;
@@ -95,7 +95,14 @@ document.addEventListener("click", e => {
         if (isFormSubmit && formElement) {
             const formData = new FormData(formElement);
             for (const [key, val] of formData.entries()) {
-                if (!body.has(key)) body.append(key, val);
+                // For array params (like selected_items[]) we must always append.
+                // For others, only append if not already present from the URL (to avoid id/step conflict)
+                const isArray = key.endsWith('[]');
+                const isRestricted = ['id', 'step', 'action', 'sesskey'].includes(key);
+                
+                if (isArray || (!isRestricted && !body.has(key))) {
+                    body.append(key, val);
+                }
             }
         }
 
@@ -129,6 +136,7 @@ document.addEventListener("click", e => {
         initTreeCheckboxes();
         initRagSearchTest();
         initIngestionForm();
+        initInstrumentFallback();
     }).catch(err => {
         console.error(err);
         alert("Error en la comunicación con el servidor. Por favor, reintenta.");
@@ -452,6 +460,7 @@ document.addEventListener("DOMContentLoaded", () => {
     initIngestionForm();
     initPromptPreview();
     initItemAdjustmentUI();
+    initInstrumentFallback();
 });
 
 /**
@@ -749,3 +758,47 @@ function debounce(func, wait) {
 }
 
 
+/**
+ * Step 4: Instrument Fallback Selection (AJAX)
+ */
+function initInstrumentFallback() {
+    const select = document.getElementById('instrument-fallback-select');
+    if (!select || select.dataset.bound) return;
+    select.dataset.bound = "1";
+
+    select.addEventListener('change', function () {
+        const name = this.value;
+        const baseUrl = this.dataset.baseurl;
+        if (!name || !baseUrl) return;
+
+        const url = new URL(baseUrl);
+        url.searchParams.set("sel_sug", name);
+        url.searchParams.set("ajax", "1");
+
+        // Use the global fetch pattern
+        const main = document.getElementById("areteia-main");
+        main.style.opacity = '0.5';
+
+        fetch(url).then(r => r.text()).then(html => {
+            main.innerHTML = html;
+            main.style.opacity = '1';
+            
+            // Re-initialize all UI components
+            initStep3Reactivity();
+            initGenerativeLoading();
+            initTreeCheckboxes();
+            initRagSearchTest();
+            initPromptPreview();
+            initItemAdjustmentUI();
+            initInstrumentFallback();
+            
+            // Update URL in history
+            const finalUrl = new URL(url);
+            finalUrl.searchParams.delete("ajax");
+            window.history.pushState({}, "", finalUrl.toString());
+        }).catch(err => {
+            console.error(err);
+            main.style.opacity = '1';
+        });
+    });
+}

@@ -18,6 +18,93 @@ class step7 {
     public static function render(array $ctx): void {
         global $PAGE;
 
+        // Capture incoming form submission from Step 5
+        $selected_indices = optional_param_array('selected_items', [], PARAM_INT);
+        $src_data         = optional_param('src_data_payload', '', PARAM_RAW);
+        
+        // If we have selected indices, we process the selection
+        if (!empty($selected_indices)) {
+            $data = null;
+            if (!empty($src_data)) {
+                $data = json_decode($src_data, true);
+            }
+            
+            // Fallback: If POST payload is missing or invalid, try reading from session
+            if (!is_array($data) || empty($data['items'])) {
+                $inst_content = session_manager::get('inst_content', '');
+                if (!empty($inst_content)) {
+                    $decode_attempt = json_decode($inst_content, true);
+                    if (is_array($decode_attempt)) {
+                        $data = $decode_attempt;
+                        // Ensure items are sequential for index matching
+                        $data['items'] = array_values($data['items'] ?? []);
+                    }
+                }
+            }
+
+            // If we still don't have data, we can't process filtered items
+            if (!is_array($data) || empty($data['items'])) {
+                error_log("[AreteIA] Failed to resolve source data for step 7");
+            } else {
+                $filtered_items = [];
+                $num_sel = count($selected_indices);
+                $base_weight = floor(100 / max(1, $num_sel));
+                $default_weights = array_fill(0, max(0, $num_sel - 1), $base_weight);
+                if ($num_sel > 0) {
+                    $default_weights[] = 100 - ($base_weight * ($num_sel - 1));
+                }
+
+                $current_idx = 0;
+                foreach ($selected_indices as $idx) {
+                    if (isset($data['items'][$idx])) {
+                        $item = $data['items'][$idx];
+                        $t = strtolower($item['type'] ?? '');
+                        
+                        $q = [
+                            'text' => $item['consiga'] ?? '',
+                            'points' => $item['points'] ?? ($num_sel > 0 ? $default_weights[$current_idx] : 1.0),
+                            'difficulty' => $item['difficulty'] ?? 'Media'
+                        ];
+                        $current_idx++;
+                        
+                        if (strpos($t, 'múltiple') !== false || strpos($t, 'selección') !== false || strpos($t, 'cerrada') !== false) {
+                            $q['type'] = 'multichoice';
+                            $q['options'] = $item['alternativas'] ?? [];
+                            $q['correct'] = isset($item['correct_index']) ? (int)$item['correct_index'] : 0;
+                        } elseif (strpos($t, 'verdadero') !== false) {
+                            $q['type'] = 'truefalse';
+                            $q['correct'] = isset($item['correct_boolean']) ? (bool)$item['correct_boolean'] : true;
+                        } elseif (strpos($t, 'emparejamiento') !== false || strpos($t, 'orden') !== false) {
+                            $q['type'] = 'match';
+                            $q['pairs'] = array_map(function($p) {
+                                return ['premise' => $p['premise'] ?? '', 'answer' => $p['answer'] ?? ''];
+                            }, $item['pairs'] ?? []);
+                        } elseif (strpos($t, 'breve') !== false || strpos($t, 'clásica') !== false) {
+                            $q['type'] = 'shortanswer';
+                            $q['correct'] = $item['short_answer'] ?? '';
+                        } elseif (strpos($t, 'numérica') !== false) {
+                            $q['type'] = 'numerical';
+                            $q['correct'] = isset($item['numerical_value']) ? (float)$item['numerical_value'] : 0.0;
+                        } else {
+                            $q['type'] = 'essay';
+                        }
+                        
+                        $filtered_items[] = $q;
+                    }
+                }
+                
+                if (!empty($filtered_items)) {
+                    $final_json_payload = json_encode([
+                        'title' => $data['title'] ?? 'Evaluación Final',
+                        'justification' => $data['justification'] ?? '',
+                        'items' => $filtered_items
+                    ]);
+                    
+                    session_manager::set('final_selection_json', $final_json_payload);
+                }
+            }
+        }
+
         $context        = $ctx['context'];
         $instrument     = session_manager::get('instrument', '');
         $inst_content   = session_manager::get('inst_content', '');
@@ -50,29 +137,113 @@ class step7 {
 
         // Preview card
         echo html_writer::start_tag('div', ['class' => 'areteia-card', 'style' => 'margin-bottom:20px;']);
-        echo html_writer::tag('p', "<strong>Vista previa final: $instrument</strong>", [
-            'style' => 'color:#185fa5; font-size:1.1em; margin-bottom:15px; border-bottom:1px solid #eee; padding-bottom:10px;',
-        ]);
-
-        // Instrument preview
-        echo html_writer::tag('div', '<strong>Consignas e Ítems:</strong>', [
-            'style' => 'font-size:13px; font-weight:bold; margin-bottom:5px;',
-        ]);
         
         $final_json = session_manager::get('final_selection_json', '');
-        if (!empty($final_json)) {
+        $is_quiz = !empty($final_json);
+        $quiz_injected = optional_param('quiz_injected', 0, PARAM_INT);
+        
+        if ($is_quiz) {
             $data = json_decode($final_json, true);
-            echo html_writer::start_tag('div', [
-                'style' => 'font-size:12px; background:#fcfcfc; padding:15px; border-radius:8px; margin-bottom:15px; border:1px solid #eee; max-height:300px; overflow-y:auto;'
+            echo html_writer::tag('p', "<strong>Configuración del Cuestionario: " . s($data['title'] ?? '') . "</strong>", [
+                'style' => 'color:#185fa5; font-size:1.1em; margin-bottom:15px; border-bottom:1px solid #eee; padding-bottom:10px;',
             ]);
+
+            // Start form for Quiz Injection
+            $inject_url = new moodle_url($PAGE->url, [
+                'action'  => 'inject_quiz',
+                'id'      => $ctx['id'],
+                'sesskey' => sesskey()
+            ]);
+            echo html_writer::start_tag('form', ['id' => 'quiz-config-form', 'method' => 'POST', 'action' => $inject_url->out(false)]);
+            echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'sesskey', 'value' => sesskey()]);
+            // selection_json removed - now using session_manager directly in backend to avoid POST bloat
+
+            echo html_writer::start_tag('div', [
+                'style' => 'background:#fcfcfc; padding:15px; border-radius:8px; border:1px solid #eee; max-height:400px; overflow-y:auto;'
+            ]);
+
             foreach (($data['items'] ?? []) as $index => $item) {
-                echo html_writer::start_tag('div', ['style' => 'margin-bottom:10px; border-bottom:1px solid #f0f0f0; padding-bottom:10px;']);
+                echo html_writer::start_tag('div', ['style' => 'margin-bottom:10px; border-bottom:1px solid #f0f0f0; padding-bottom:10px; display:flex; justify-content:space-between; gap:20px;']);
+                echo html_writer::start_tag('div', ['style' => 'flex:1; font-size:12px;']);
                 echo html_writer::tag('div', '<strong>' . ($index + 1) . '. ' . s($item['type']) . '</strong>', ['style' => 'color:#6c63ff; font-size:11px;']);
-                echo html_writer::tag('div', format_text($item['consiga'] ?? '', FORMAT_MARKDOWN));
+                echo html_writer::tag('div', format_text($item['text'] ?? $item['consiga'] ?? '', FORMAT_MARKDOWN));
+                echo html_writer::end_tag('div');
+
+                // Peso/Ponderación input
+                echo html_writer::start_tag('div', ['style' => 'text-align:center; min-width:80px;']);
+                echo html_writer::tag('label', 'Ponderación (%):', ['style' => 'font-size:11px; font-weight:bold; color:#555; display:block; margin-bottom:2px;']);
+                echo html_writer::start_tag('div', ['style' => 'display:flex; align-items:center; justify-content:center; gap:2px;']);
+                echo html_writer::empty_tag('input', [
+                    'type'  => 'number',
+                    'name'  => "item_points[$index]",
+                    'step'  => '0.1',
+                    'min'   => '0.1',
+                    'value' => isset($item['points']) ? $item['points'] : 1.0,
+                    'class' => 'quiz-item-points form-control',
+                    'data-idx' => $index,
+                    'style' => 'width:60px; text-align:center; padding:4px;'
+                ]);
+                echo html_writer::tag('span', '%', ['style' => 'font-size:12px; color:#555; font-weight:bold;']);
+                echo html_writer::end_tag('div');
+                echo html_writer::end_tag('div');
+
                 echo html_writer::end_tag('div');
             }
+            
+            if (empty($data['items'])) {
+                echo html_writer::tag('div', 'No hay ítems seleccionados para configurar. Vuelve al paso anterior.', ['class' => 'alert alert-info']);
+            }
             echo html_writer::end_tag('div');
+
+            // Global Settings: Max Grade & Section selection
+            echo html_writer::start_tag('div', ['style' => 'display:flex; align-items:center; justify-content:space-between; margin-top:20px; gap:20px; flex-wrap:wrap;']);
+            
+            // Max Grade
+            echo html_writer::start_tag('div', ['style' => 'flex:1; min-width:200px;']);
+            echo html_writer::tag('strong', 'Puntaje final total (Max Grade):', ['style' => 'display:block; font-size:13px; margin-bottom:5px;']);
+            echo html_writer::empty_tag('input', [
+                'type' => 'number',
+                'name' => 'max_grade',
+                'step' => '0.1',
+                'value' => '100', // Default 100 max points
+                'class' => 'form-control',
+                'style' => 'max-width:150px;'
+            ]);
+            echo html_writer::end_tag('div');
+
+            // Section Info
+            $sections = data_provider::get_course_sections($ctx['id']);
+            echo html_writer::start_tag('div', ['style' => 'flex:1; min-width:200px;']);
+            echo html_writer::tag('strong', 'Ubicación en Moodle:', ['style' => 'display:block; font-size:13px; margin-bottom:5px;']);
+            echo html_writer::start_tag('select', ['name' => 'section_num', 'class' => 'form-control', 'style' => 'max-width:280px; font-size:13px;']);
+            foreach ($sections as $sec) {
+                echo html_writer::tag('option', s($sec['name']), ['value' => $sec['num']]);
+            }
+            echo html_writer::end_tag('select');
+            echo html_writer::end_tag('div');
+
+            if ($quiz_injected != 1) {
+                echo html_writer::tag('button', '🚀 Publicar Cuestionario en Moodle', [
+                    'id'    => 'btn-publish-quiz',
+                    'type'  => 'submit',
+                    'class' => 'areteia-btn areteia-btn-primary',
+                    'style' => 'background:#28a745; border-color:#28a745;'
+                ]);
+            }
+            echo html_writer::end_tag('div'); // flex container
+
+            echo html_writer::end_tag('form'); // end quiz form
+
         } else {
+            echo html_writer::tag('p', "<strong>Vista previa final: $instrument</strong>", [
+                'style' => 'color:#185fa5; font-size:1.1em; margin-bottom:15px; border-bottom:1px solid #eee; padding-bottom:10px;',
+            ]);
+
+            // Instrument preview
+            echo html_writer::tag('div', '<strong>Consignas e Ítems:</strong>', [
+                'style' => 'font-size:13px; font-weight:bold; margin-bottom:5px;',
+            ]);
+            
             $preview_inst = mb_strimwidth($inst_content, 0, 500, '...');
             echo html_writer::tag('div',
                 format_text($preview_inst, FORMAT_MARKDOWN, ['context' => $context]),
@@ -81,20 +252,22 @@ class step7 {
                     'style' => 'font-size:12px; background:#fcfcfc; padding:10px; border-radius:8px; margin-bottom:15px; border:1px solid #eee;',
                 ]
             );
-        }
 
-        // Rubric preview
-        echo html_writer::tag('div', '<strong>Rúbrica:</strong>', [
-            'style' => 'font-size:13px; font-weight:bold; margin-bottom:5px;',
-        ]);
-        $preview_rub = mb_strimwidth($rubric_content, 0, 500, '...');
-        echo html_writer::tag('div',
-            format_text($preview_rub, FORMAT_MARKDOWN, ['context' => $context]),
-            [
-                'class' => 'areteia-markdown-content',
-                'style' => 'font-size:12px; background:#fcfcfc; padding:10px; border-radius:8px; border:1px solid #eee;',
-            ]
-        );
+            // Rubric preview
+            if (!empty($rubric_content)) {
+                echo html_writer::tag('div', '<strong>Rúbrica:</strong>', [
+                    'style' => 'font-size:13px; font-weight:bold; margin-bottom:5px;',
+                ]);
+                $preview_rub = mb_strimwidth($rubric_content, 0, 500, '...');
+                echo html_writer::tag('div',
+                    format_text($preview_rub, FORMAT_MARKDOWN, ['context' => $context]),
+                    [
+                        'class' => 'areteia-markdown-content',
+                        'style' => 'font-size:12px; background:#fcfcfc; padding:10px; border-radius:8px; border:1px solid #eee;',
+                    ]
+                );
+            }
+        }
         echo html_writer::end_tag('div');
 
         // Total Usage Summary
@@ -123,13 +296,14 @@ class step7 {
         }
 
         // Navigation
-        $prev_url   = new moodle_url($PAGE->url, ['step' => 6]);
-        $export_url = new moodle_url($PAGE->url, ['action' => 'export']);
+        $prev_url   = new moodle_url($PAGE->url, ['step' => 6]); // Now goes back to 5 due to sequence update
+        $export_url = new moodle_url($PAGE->url, ['action' => 'export', 'sesskey' => sesskey()]);
 
-        if ($exported == 1) {
+        if ($exported == 1 || $quiz_injected == 1) { // Hide if either is published to avoid confusion
             step_renderer::render_nav(7, $prev_url, null, '', [], '✔ Publicado con éxito');
         } else {
-            step_renderer::render_nav(7, $prev_url, $export_url, '🚀 Publicar en Moodle');
+            // Se pasa null en el tercer parámetro para eliminar el botón duplicado de "Publicar"
+            step_renderer::render_nav(7, $prev_url, null);
         }
 
         // ----------------------------------------------------------------
@@ -176,86 +350,5 @@ class step7 {
             );
             echo html_writer::end_tag('div');
         }
-
-        // Quiz injection form (always shown unless just published)
-        if ($quiz_injected != 1) {
-            $questions = self::get_fake_questions();
-            $sections  = data_provider::get_course_sections($ctx['id']);
-
-            echo html_writer::start_tag('div', [
-                'class' => 'areteia-card',
-                'style' => 'margin-top:20px; border-left:5px solid #6c63ff; background:#f8f7ff;',
-            ]);
-            echo html_writer::tag('strong', '❓ Cuestionario de evaluación', [
-                'style' => 'color:#6c63ff; display:block; margin-bottom:4px;',
-            ]);
-            echo html_writer::tag('p', count($questions) . ' preguntas listas para publicar (' .
-                implode(', ', array_map(function($q) { return $q['type']; }, $questions)) . ')', [
-                'style' => 'font-size:12px; color:#666; margin-bottom:15px;',
-            ]);
-
-            // Section selector form
-            $inject_url = new moodle_url($PAGE->url, ['action' => 'inject_quiz', 'id' => $ctx['id']]);
-            echo html_writer::start_tag('form', [
-                'method' => 'POST',
-                'action' => $inject_url->out(false),
-                'style'  => 'display:flex; gap:10px; align-items:center; flex-wrap:wrap;',
-            ]);
-            echo html_writer::empty_tag('input', [
-                'type'  => 'hidden',
-                'name'  => 'sesskey',
-                'value' => sesskey(),
-            ]);
-
-            // Section select
-            echo html_writer::start_tag('select', [
-                'name'  => 'section_num',
-                'class' => 'form-control',
-                'style' => 'max-width:280px; font-size:13px;',
-            ]);
-            foreach ($sections as $sec) {
-                echo html_writer::tag('option', s($sec['name']), ['value' => $sec['num']]);
-            }
-            echo html_writer::end_tag('select');
-
-            echo html_writer::tag('button', '📋 Publicar Cuestionario en Moodle', [
-                'type'  => 'submit',
-                'class' => 'areteia-btn areteia-btn-primary',
-                'style' => 'font-size:13px;',
-            ]);
-            echo html_writer::end_tag('form');
-            echo html_writer::end_tag('div');
-        }
-    }
-
-    /**
-     * Returns the fake questions for quiz injection.
-     * In the future these will come from AI-generated content.
-     *
-     * @return array
-     */
-    public static function get_fake_questions(): array {
-        return [
-            [
-                'type'    => 'multichoice',
-                'text'    => '¿Cuál de los siguientes es un ejemplo de evaluación formativa?',
-                'options' => [
-                    'Examen final del semestre',
-                    'Retroalimentación continua durante el proceso de aprendizaje',
-                    'Prueba de admisión universitaria',
-                    'Calificación numérica trimestral',
-                ],
-                'correct' => 1, // índice de la opción correcta (0-based)
-            ],
-            [
-                'type'    => 'truefalse',
-                'text'    => 'La taxonomía de Bloom clasifica los objetivos de aprendizaje en niveles cognitivos jerárquicos.',
-                'correct' => true,
-            ],
-            [
-                'type' => 'essay',
-                'text' => 'Describe cómo diseñarías una evaluación auténtica para tu asignatura. Fundamenta tu respuesta considerando el contexto pedagógico del curso.',
-            ],
-        ];
     }
 }

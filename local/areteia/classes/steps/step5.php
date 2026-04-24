@@ -115,10 +115,17 @@ class step5 {
             if (!$data || !is_array($data)) {
                 echo html_writer::tag('div', 'Error decodificando la respuesta de la IA.', ['class' => 'alert alert-danger']);
             } else {
+                // Ensure items is a list for JS
+                $data['items'] = array_values($data['items'] ?? []);
+                
                 echo html_writer::tag('h3', $data['title'] ?? 'Propuesta de Ítems', ['style' => 'color:#185fa5; margin-bottom:15px;']);
                 
                 // Form for item selection
-                echo html_writer::start_tag('form', ['id' => 'item-selection-form']);
+                echo html_writer::start_tag('form', [
+                    'id' => 'item-selection-form',
+                    'method' => 'POST',
+                    'action' => (new moodle_url($PAGE->url, array_merge($link_params, ['step' => 7])))->out(false)
+                ]);
                 echo html_writer::start_tag('div', ['style' => 'display:flex; flex-direction:column; gap:15px; margin-bottom:20px;']);
                 
                 foreach (($data['items'] ?? []) as $index => $item) {
@@ -229,9 +236,9 @@ class step5 {
                     echo html_writer::end_tag('div'); // body div
                     echo html_writer::end_tag('div'); // flex container div
                     echo html_writer::end_tag('div'); // card container div
-                }
-                echo html_writer::end_tag('div');
-                
+                } // End items loop
+                echo html_writer::end_tag('div'); // areteia-inner div wrapper (items container)
+
                 // Justification
                 if (!empty($data['justification'])) {
                     echo html_writer::start_tag('div', ['style' => 'font-size:12px; color:#666; font-style:italic; padding:15px; background:#f9f9f9; border-radius:10px; margin-bottom:20px; border:1px solid #eee;']);
@@ -240,8 +247,13 @@ class step5 {
                     echo html_writer::end_tag('div');
                 }
                 
-                // Final selection JSON hidden input (populated by JS)
-                echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'final_json', 'id' => 'final_json_input']);
+                // Securely store the source data for PHP processing in Step 7
+                echo html_writer::empty_tag('input', [
+                    'type' => 'hidden',
+                    'name' => 'src_data_payload',
+                    'value' => s(json_encode($data))
+                ]);
+                
                 echo html_writer::end_tag('form');
             }
 
@@ -256,62 +268,14 @@ class step5 {
                 ['class' => 'areteia-btn']
             );
 
-            // Continue to Step 6 button
-            $step6_url = new moodle_url($PAGE->url, array_merge($link_params, ['step' => 6]));
-            echo html_writer::link('#', 'Ver Selección Final →', [
+            echo html_writer::tag('button', 'Configurar Evaluación Final →', [
                 'id'    => 'btn-go-to-step6',
+                'type'  => 'submit',
+                'form'  => 'item-selection-form',
                 'class' => 'areteia-btn areteia-btn-primary',
-                'style' => 'background:#28a745; border-color:#28a745;'
+                'style' => 'background:#185fa5; border-color:#185fa5;'
             ]);
             
-            echo html_writer::end_tag('div');
-            
-            // Script to handle item selection for step 6
-            echo '
-            <script>
-            (function() {
-                const btn = document.getElementById("btn-go-to-step6");
-                if (!btn) return;
-                
-                btn.onclick = function(e) {
-                    e.preventDefault();
-                    const form = document.getElementById("item-selection-form");
-                    const checked = Array.from(form.querySelectorAll(".item-cb:checked")).map(cb => parseInt(cb.value));
-                    
-                    if (checked.length === 0) {
-                        alert("Por favor selecciona al menos un ítem.");
-                        return;
-                    }
-                    
-                    const allData = ' . json_encode($data) . ';
-                    const selectedData = {
-                        title: allData.title,
-                        justification: allData.justification,
-                        items: allData.items.filter((_, idx) => checked.includes(idx))
-                    };
-                    
-                    // Create a hidden form to POST to step 6
-                    const postForm = document.createElement("form");
-                    postForm.method = "POST";
-                    postForm.action = "' . $step6_url->out(false) . '";
-                    
-                    const input = document.createElement("input");
-                    input.type = "hidden";
-                    input.name = "selection_json";
-                    input.value = JSON.stringify(selectedData);
-                    postForm.appendChild(input);
-                    
-                    document.body.appendChild(postForm);
-                    
-                    // Trigger AJAX navigation if areteia_app context exists (optional, keeping it simple with form post)
-                    // But our areteia.js intercepts links, not form posts usually.
-                    // We will just let it post normally or use areteia.js logic.
-                    postForm.submit();
-                };
-            })();
-            </script>
-            ';
-
             echo html_writer::end_tag('div');
         }
     }
