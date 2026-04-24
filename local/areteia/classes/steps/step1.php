@@ -251,7 +251,7 @@ class step1 {
             );
             echo html_writer::end_tag('div');
 
-            $delete_url = new moodle_url($PAGE->url, ['step' => 1, 'action' => 'delete_rag']);
+            $delete_url = new moodle_url($PAGE->url, ['step' => 1, 'action' => 'delete_rag', 'sesskey' => sesskey()]);
             echo html_writer::start_tag('div', ['style' => 'text-align:right; margin-bottom: 20px;']);
             echo html_writer::link($delete_url, '🗑️ Eliminar Biblioteca y reiniciar', [
                 'class' => 'areteia-btn', 
@@ -377,7 +377,7 @@ class step1 {
             );
             echo html_writer::end_tag('div');
 
-            $retry_url = new moodle_url($PAGE->url, ['id' => $id, 'action' => 'ingest']);
+            $retry_url = new moodle_url($PAGE->url, ['id' => $id, 'action' => 'ingest', 'sesskey' => sesskey()]);
             step_renderer::render_nav(1, $prev_url, $retry_url, 'Reintentar Construcción');
 
         } else if ($service_down) {
@@ -398,6 +398,7 @@ class step1 {
                 'method' => 'POST',
                 'id'     => 'areteia-ingest-form',
             ]);
+            echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'sesskey', 'value' => sesskey()]);
             echo html_writer::empty_tag('input', [
                 'type'  => 'hidden',
                 'name'  => 'selected_files',

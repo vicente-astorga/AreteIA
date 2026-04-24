@@ -98,7 +98,7 @@ document.addEventListener("click", e => {
                 // For array params (like selected_items[]) we must always append.
                 // For others, only append if not already present from the URL (to avoid id/step conflict)
                 const isArray = key.endsWith('[]');
-                const isRestricted = ['id', 'step', 'action', 'sesskey'].includes(key);
+                const isRestricted = ['id', 'step', 'action'].includes(key);
                 
                 if (isArray || (!isRestricted && !body.has(key))) {
                     body.append(key, val);
