@@ -9,6 +9,10 @@ class SuggestionItem(BaseModel):
 class SuggestionsResponse(BaseModel):
     suggestions: List[SuggestionItem]
 
+class ItemPair(BaseModel):
+    premise: str
+    answer: str
+
 class InstrumentItem(BaseModel):
     type: str # Must be one of the names in tipos_de_preguntas.json
     objectives: List[str]
@@ -17,6 +21,11 @@ class InstrumentItem(BaseModel):
     oraciones: Optional[List[str]] = None # List of sentences for True/False
     difficulty: str # e.g., "Fácil", "Media", "Difícil"
     points: Optional[float] = None # Estimated points (not final)
+    correct_index: Optional[int] = None # For Multiple Choice
+    correct_boolean: Optional[bool] = None # For True/False
+    pairs: Optional[List[ItemPair]] = None # For Matching
+    short_answer: Optional[str] = None # For Short Answer
+    numerical_value: Optional[float] = None # For Numerical
 
 class InstrumentDesign(BaseModel):
     title: str

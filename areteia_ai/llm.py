@@ -123,13 +123,13 @@ def get_design_prompt(chosen_instrument, instrument_desc, structured_materials, 
   1. Genera exactamente {num_items} ítems.
   2. Cada ítem debe usar OBLIGATORIAMENTE uno de los "TIPOS DE PREGUNTAS PERMITIDOS" listados arriba. El campo "type" debe coincidir EXACTAMENTE con el nombre del tipo.
   3. Para cada ítem, identifica qué objetivos específicos de los listados arriba está cubriendo.
-  4. **Estructura JSON por Tipo**: Para todos los tipos de preguntas, utiliza el campo `consiga` para colocar el enunciado, consigna o descripción principal. Sigue estas directrices según el tipo:
-      - Si el tipo es "Opción múltiple" o "Ítems de selección", rellena `consiga` con el enunciado y utiliza el campo `alternativas` para las opciones.
-      - Si es "Verdadero/Falso", rellena `consiga` con la afirmación y utiliza el campo `oraciones` para las opciones "Verdadero" y "Falso".
-      - Si es “Texto lacunar” o “Elige la palabra perdida”, proporciona el texto con los espacios en blanco en el campo `consiga`.
-      - Si es “ensayo”, proporciona las orientaciones y criterios de reflexión en el campo `consiga`.
-      - Si es “ítems de respuesta abierta” o “preguntas clásicas”, coloca las preguntas o consignas de desarrollo en el campo `consiga`.
-      - Para “numérica”, “poner orden” o “emparejamiento”, describe el reto y los elementos a procesar en el campo `consiga`.
+  4. **Estructura JSON por Tipo y Respuestas Correctas**:
+      - **Opción múltiple**: Llena `consiga` (enunciado), `alternativas` (mínimo 4) y `correct_index` (índice 0-indexed de la opción correcta).
+      - **Verdadero/Falso**: Llena `consiga` (afirmación) y `correct_boolean` (true si es verdadera, false si es falsa).
+      - **Emparejamiento / Poner en orden**: Describe la tarea en `consiga` y llena la lista `pairs` con objetos `{{"premise": "...", "answer": "..."}}`.
+      - **Respuesta breve / Texto lacunar**: Enuncia la tarea en `consiga` y proporciona la respuesta esperada en `short_answer`.
+      - **Numérica**: Enuncia el problema en `consiga` y provee el valor exacto en `numerical_value`.
+      - **Ensayo / Respuesta abierta**: Describe las orientaciones en `consiga`. No requiere respuesta predefinida.
 
   5. Los ítems deben redactarse con rigor pedagógico y coherencia con los extractos de los materiales proporcionados.
   6. Asigna una dificultad ("Fácil", "Media", "Difícil").
@@ -140,12 +140,16 @@ def get_design_prompt(chosen_instrument, instrument_desc, structured_materials, 
     "title": "Título descriptivo del instrumento",
     "items": [
       {{
-        "type": "Nombre exacto del tipo de pregunta",
-        "objectives": ["Objetivo 1", "Objetivo 2"],
-        "consiga": "Enunciado o consigna principal",
-        "alternativas": ["opción A", "opción B", "opción C", "opción D"],
-        "oraciones": null,
+        "type": "Nombre exacto del tipo",
+        "objectives": ["Obj 1"],
+        "consiga": "...",
         "difficulty": "Media",
+        "alternativas": ["op A", "op B"],
+        "correct_index": 0,
+        "correct_boolean": null,
+        "pairs": [ {{"premise": "P1", "answer": "A1"}} ],
+        "short_answer": "...",
+        "numerical_value": null
       }}
     ],
     "justification": "Explica la coherencia pedagógica de la selección."
