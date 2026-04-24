@@ -121,8 +121,21 @@ document.addEventListener("click", e => {
         const isStepChange = finalUrl.searchParams.get("step") !== new URL(location.href).searchParams.get("step");
 
         window.history.pushState({}, "", finalUrl.toString());
-        return r.text().then(html => ({ html, isStepChange }));
-    }).then(({ html, isStepChange }) => {
+        return r.text().then(html => ({ html, isStepChange, contentType: r.headers.get('content-type') }));
+    }).then(({ html, isStepChange, contentType }) => {
+        // Check if response is JSON redirect
+        if (contentType && contentType.includes('application/json')) {
+            try {
+                const json = JSON.parse(html);
+                if (json.redirect) {
+                    window.location.href = json.redirect;
+                    return;
+                }
+            } catch (e) {
+                // Not valid JSON, treat as HTML
+            }
+        }
+
         const main = document.getElementById("areteia-main");
         if (isStepChange || !document.getElementById("d2-container")) {
             main.innerHTML = html;

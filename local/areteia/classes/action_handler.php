@@ -65,11 +65,6 @@ class action_handler {
      * Sync course files to the Python service and redirect to Step 1.
      */
     private static function handle_sync(int $course_id, \moodle_url $base_url, bool $is_ajax): void {
-        // Release session lock so nav/AJAX works while sync runs.
-        if (method_exists('\core\session\manager', 'write_close')) {
-            \core\session\manager::write_close();
-        }
-
         // Extract files to sync dir + get summary
         data_provider::get_course_files($course_id, true);
         $summary = data_provider::get_course_summary($course_id);
@@ -80,7 +75,11 @@ class action_handler {
         // Always return to the Library tab (Step 1)
         $redir = new \moodle_url($base_url, ['step' => 1, 'use_moodle' => 1, 'action' => 'lib']);
         if ($is_ajax) {
-            $redir->param('ajax', 1);
+            // For AJAX: return JSON with redirect URL, avoid Moodle's redirect() which mutates session
+            header('Content-Type: application/json');
+            echo json_encode(['redirect' => $redir->out(false)]);
+            if (ob_get_level() > 0) ob_end_clean();
+            exit();
         }
         redirect($redir);
     }

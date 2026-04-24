@@ -75,17 +75,9 @@ if ($action === 'lib' && $step === 0 && $id > 0 && $force_step) {
 }
 
 // ------------------------------------------------------------------
-// AJAX detection — AJAX requests return only inner HTML, no header/footer
+// AJAX detection
 // ------------------------------------------------------------------
 $is_ajax = optional_param('ajax', 0, PARAM_INT);
-
-if ($is_ajax) {
-    ob_start();
-} else {
-    echo $OUTPUT->header();
-    echo '<style>' . file_get_contents(__DIR__ . '/styles.css') . '</style>';
-    echo '<script>' . file_get_contents(__DIR__ . '/areteia.js') . '</script>';
-}
 
 // ------------------------------------------------------------------
 // Session state management
@@ -102,8 +94,19 @@ try {
 // Action handling (redirect before any rendering)
 // ------------------------------------------------------------------
 if (in_array($action, $server_actions)) {
-    \local_areteia\action_handler::handle($action, $id, $PAGE->url, $is_ajax);
+    \local_areteia\action_handler::handle($action, $id, $PAGE->url, (bool)$is_ajax);
     // ^ never returns (redirect + die)
+}
+
+// ------------------------------------------------------------------
+// Render Header (must be done after action handler to avoid redirect errors)
+// ------------------------------------------------------------------
+if ($is_ajax) {
+    ob_start();
+} else {
+    echo $OUTPUT->header();
+    echo '<style>' . file_get_contents(__DIR__ . '/styles.css') . '</style>';
+    echo '<script>' . file_get_contents(__DIR__ . '/areteia.js') . '</script>';
 }
 
 // ------------------------------------------------------------------
@@ -140,7 +143,7 @@ try {
 
 } catch (\Throwable $e) {
     if ($is_ajax) {
-        ob_end_clean();
+        if (ob_get_level() > 0) ob_end_clean();
         echo 'Error: ' . $e->getMessage();
         die();
     }
