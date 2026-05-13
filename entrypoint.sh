@@ -45,8 +45,8 @@ mkdir -p "/var/www/html/local/areteia"
 
 # 3. Ajuste de permisos para www-data (Solo sobre lo necesario)
 echo "Ajustando permisos internos..."
-chown -R www-data:www-data "/var/www/html/local/areteia"
-chown www-data:www-data "/var/www/html/config.php"
+chown -R www-data:www-data "/var/www/html/local/areteia" || true
+chown www-data:www-data "/var/www/html/config.php" || true
 
 # 4. Pasar ejecución al comando original (php-fpm)
 exec "$@"

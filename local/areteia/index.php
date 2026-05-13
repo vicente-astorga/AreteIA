@@ -1,5 +1,16 @@
 <?php
 /**
+ * AreteIA — Entry point for the pedagogical workflow.
+ *
+ * This file is intentionally slim (~80 lines). All logic lives in:
+ *   classes/session_manager.php  — state persistence + cascading invalidation
+ *   classes/lock_manager.php     — reusable step-locking UI pattern
+ *   classes/rag_client.php       — HTTP client for the Python RAG service
+ *   classes/action_handler.php   — sync / ingest / export actions
+ *   classes/step_renderer.php    — progress bar + card wrapper + dispatch
+ *   classes/steps/step0..7.php   — individual step renderers
+ *   areteia.js                   — client-side AJAX navigation + reactivity
+ *
  * @package    local_areteia
  * @copyright  2026 Vicente Astorga
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
@@ -7,115 +18,135 @@
 
 require_once(__DIR__ . '/../../config.php');
 
-$id = optional_param('id', 0, PARAM_INT);
+global $CFG, $DB, $PAGE, $OUTPUT, $USER;
+
+$id     = optional_param('id', 0, PARAM_INT);
+$action = optional_param('action', 'lib', PARAM_ALPHANUMEXT);
+$step   = optional_param('step', -1, PARAM_INT); // -1 to detect if not provided
+
+// Allow server-side redirect actions to bypass tab validation
+$server_actions = ['sync', 'ingest', 'export', 'delete_rag', 'preview', 'inject_quiz'];
+if (!isset(\local_areteia\step_renderer::ACTIONS[$action]) && !in_array($action, $server_actions)) {
+    $action = 'lib';
+}
+
+$allowed_steps = isset(\local_areteia\step_renderer::ACTIONS[$action]['steps']) 
+    ? \local_areteia\step_renderer::ACTIONS[$action]['steps'] 
+    : [];
+if ($step === -1 || (!empty($allowed_steps) && !in_array($step, $allowed_steps))) {
+    $step = !empty($allowed_steps) ? $allowed_steps[0] : 0;
+}
 
 require_login();
 
-$context = context_system::instance();
-if ($id) {
-    $context = context_course::instance($id);
-}
-
-$PAGE->set_url(new moodle_url('/local/areteia/index.php', ['id' => $id]));
-$PAGE->set_context($context);
-$PAGE->set_title(get_string('pluginname', 'local_areteia'));
-$PAGE->set_heading(get_string('pluginname', 'local_areteia'));
-
-echo $OUTPUT->header();
-
 if (!$id) {
+    echo $OUTPUT->header();
     echo $OUTPUT->notification('Please provide a Course ID (?id=XX)', 'error');
     echo $OUTPUT->footer();
     die();
 }
 
-try {
-    $summary = \local_areteia\data_provider::get_course_summary($id);
-    $files = \local_areteia\data_provider::get_course_files($id);
+require_once($CFG->libdir . '/filelib.php');
+require_once($CFG->dirroot . '/course/lib.php');
+require_once($CFG->libdir . '/questionlib.php');
 
-    echo $OUTPUT->heading(get_string('coursereport', 'local_areteia') . ': ' . $summary['fullname']);
-    
-    // Sync Button
-    echo html_writer::start_tag('div', ['class' => 'areteia-actions mb-4']);
-    $syncurl = new moodle_url($PAGE->url, ['action' => 'sync']);
-    echo html_writer::link($syncurl, 'Consumir Data (Sincronizar con Python/IA)', ['class' => 'btn btn-primary']);
-    echo html_writer::end_tag('div');
+$context = context_course::instance($id);
+$PAGE->set_url(new moodle_url('/local/areteia/index.php', [
+    'id'     => $id, 
+    'step'   => $step, 
+    'action' => $action
+]));
+$PAGE->set_context($context);
+$PAGE->set_title('AreteIA — Flujo docente');
+$PAGE->set_heading('AreteIA — Flujo módulo docente');
+$PAGE->set_pagelayout('report');
 
-    if (optional_param('action', '', PARAM_ALPHA) === 'sync') {
-        echo $OUTPUT->notification('Extrayendo archivos y sincronizando con el servicio de IA...', 'info');
-        
-        // El segundo parámetro en true fuerza la extracción de los archivos al volumen compartido
-        $files_for_ai = \local_areteia\data_provider::get_course_files($id, true);
-        
-        $payload = json_encode([
-            'course' => $summary,
-            'files' => $files_for_ai
-        ]); 
-        
-        // En Moodle, curl::ignoresecurity debe pasarse en el constructor como array de opciones
-        $curl = new \curl(['ignoresecurity' => true]);
-        $curl->setHeader('Content-Type: application/json');
-        
-        $options = [
-            'CURLOPT_TIMEOUT' => 30,
-            'CURLOPT_CONNECTTIMEOUT' => 10,
-        ];
-        
-        $response = $curl->post('http://python_rag:8000/sync', $payload, $options);
-        
-        if ($curl->get_errno()) {
-            echo $OUTPUT->notification('Error de conexión con el servicio de IA (Python): ' . $curl->error, 'error');
-        } else {
-            $info = $curl->get_info();
-            $res = json_decode($response);
-            if (isset($res->status) && $res->status === 'success') {
-                echo $OUTPUT->notification('¡Éxito! El servicio en Python respondió: ' . $res->message, 'success');
-            } else {
-                echo $OUTPUT->notification('Respuesta inesperada de Python (HTTP ' . $info['http_code'] . ').', 'warning');
-                echo html_writer::tag('pre', 'Response: ' . s($response));
-                if (empty($response)) {
-                    echo $OUTPUT->notification('La respuesta está vacía. Verifica los logs del contenedor areteia_ai.', 'error');
-                }
-            }
+// Auto-skip Step 0 if RAG already exists (for "Crear Biblioteca" action)
+$force_step = optional_param('force_step', 1, PARAM_INT); // Default to 1 to auto-skip if it exists
+if ($action === 'lib' && $step === 0 && $id > 0 && $force_step) {
+    try {
+        $status = \local_areteia\rag_client::status($id);
+        if ($status['data'] && !empty($status['data']->embedding_exists)) {
+            $step = 1;
         }
+    } catch (\Exception $e) {
+        // Silently fail and stay on step 0 if service is down
     }
-
-    echo html_writer::start_tag('div', ['class' => 'areteia-summary card p-3 mb-4']);
-    echo html_writer::tag('p', '<strong>Summary:</strong> ' . ($summary['summary'] ?: 'No summary available'));
-    echo html_writer::tag('p', '<strong>Files detected:</strong> ' . count($files));
-    echo html_writer::end_tag('div');
-
-    // Sections and files
-    echo html_writer::start_tag('div', ['class' => 'row']);
-    echo html_writer::start_tag('div', ['class' => 'col-md-8']);
-    foreach ($summary['sections'] as $section) {
-        echo html_writer::start_tag('div', ['class' => 'section mb-3 border-bottom pb-2']);
-        echo html_writer::tag('h5', $section['name']);
-        if (!empty($section['activities'])) {
-            echo html_writer::start_tag('ul', ['class' => 'list-unstyled ml-3']);
-            foreach ($section['activities'] as $activity) {
-                echo html_writer::tag('li', '• [' . $activity['type'] . '] ' . $activity['name']);
-            }
-            echo html_writer::end_tag('ul');
-        }
-        echo html_writer::end_tag('div');
-    }
-    echo html_writer::end_tag('div');
-
-    echo html_writer::start_tag('div', ['class' => 'col-md-4']);
-    echo html_writer::tag('h5', 'Archivos para RAG');
-    echo html_writer::start_tag('ul', ['class' => 'list-group']);
-    foreach ($files as $file) {
-        echo html_writer::tag('li', $file['filename'] . ' (' . display_size($file['size']) . ')', ['class' => 'list-group-item d-flex justify-content-between align-items-center']);
-    }
-    echo html_writer::end_tag('ul');
-    echo html_writer::end_tag('div');
-    echo html_writer::end_tag('div');
-
-    echo html_writer::tag('pre', json_encode(['course' => $summary, 'files' => $files], JSON_PRETTY_PRINT), ['class' => 'bg-light p-3 border mt-4', 'style' => 'max-height: 300px; overflow: auto;']);
-
-} catch (Exception $e) {
-    echo $OUTPUT->notification('Error: ' . $e->getMessage(), 'error');
 }
 
-echo $OUTPUT->footer();
+// ------------------------------------------------------------------
+// AJAX detection
+// ------------------------------------------------------------------
+$is_ajax = optional_param('ajax', 0, PARAM_INT);
+
+// ------------------------------------------------------------------
+// Session state management
+// ------------------------------------------------------------------
+try {
+    \local_areteia\session_manager::init();
+    \local_areteia\session_manager::sync_from_request();
+} catch (\Throwable $e) {
+    // Session init failure is unlikely but we should be safe
+    error_log('[AreteIA] Session init failed: ' . $e->getMessage());
+}
+
+// ------------------------------------------------------------------
+// Action handling (redirect before any rendering)
+// ------------------------------------------------------------------
+if (in_array($action, $server_actions)) {
+    \local_areteia\action_handler::handle($action, $id, $PAGE->url, (bool)$is_ajax);
+    // ^ never returns (redirect + die)
+}
+
+// ------------------------------------------------------------------
+// Render Header (must be done after action handler to avoid redirect errors)
+// ------------------------------------------------------------------
+if ($is_ajax) {
+    ob_start();
+} else {
+    echo $OUTPUT->header();
+    echo '<style>' . file_get_contents(__DIR__ . '/styles.css') . '</style>';
+    echo '<script>' . file_get_contents(__DIR__ . '/areteia.js') . '</script>';
+}
+
+// ------------------------------------------------------------------
+// Main rendering inside try/catch for stability
+// ------------------------------------------------------------------
+try {
+    // Fetch course data
+    $summary = \local_areteia\data_provider::get_course_summary($id);
+    $files   = \local_areteia\data_provider::get_course_files($id);
+    $step_data = [
+        'summary' => $summary,
+        'files'   => $files,
+        'context' => $context,
+        'is_ajax' => $is_ajax
+    ];
+
+    // Outer wrapper (only for non-AJAX — AJAX replaces inner content)
+    if (!$is_ajax) {
+        echo html_writer::start_tag('div', ['class' => 'areteia-wrap', 'id' => 'areteia-main']);
+    }
+
+    // Inner content
+    echo html_writer::start_tag('div', ['class' => 'areteia-inner']);
+    \local_areteia\step_renderer::render($action, $step, $id, $summary, $files, $context, $is_ajax);
+    echo html_writer::end_tag('div'); // areteia-inner
+
+    if (!$is_ajax) {
+        echo html_writer::end_tag('div'); // areteia-wrap
+        echo $OUTPUT->footer();
+    } else {
+        echo ob_get_clean();
+        die();
+    }
+
+} catch (\Throwable $e) {
+    if ($is_ajax) {
+        if (ob_get_level() > 0) ob_end_clean();
+        echo 'Error: ' . $e->getMessage();
+        die();
+    }
+    echo $OUTPUT->notification('Error: ' . $e->getMessage(), 'error');
+    echo $OUTPUT->footer();
+}

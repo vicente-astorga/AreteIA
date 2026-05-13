@@ -1,0 +1,134 @@
+{
+  "analisis-fuentes": [
+    "seleccion",
+    "respuesta-abierta",
+    "respuesta-cerrada",
+    "ensayo",
+    "respuesta-breve"
+  ],
+  "aps": [
+    "respuesta-abierta",
+    "respuesta-cerrada",
+    "respuesta-breve",
+    "verdadero-falso"
+  ],
+  "ev-autentica": [
+    "respuesta-abierta",
+    "respuesta-cerrada",
+    "respuesta-breve",
+    "verdadero-falso"
+  ],
+  "cuestionario": [
+    "palabra-perdida",
+    "emparejamiento",
+    "ensayo",
+    "seleccion",
+    "respuesta-abierta",
+    "respuesta-cerrada",
+    "completar",
+    "numerica",
+    "opcion-multiple",
+    "orden",
+    "respuesta-breve",
+    "texto-lacunar",
+    "verdadero-falso"
+  ],
+  "debate": [
+    "respuesta-abierta"
+  ],
+  "ensayo-desarrollo": [
+    "respuesta-abierta"
+  ],
+  "escape-room": [
+    "palabra-perdida",
+    "emparejamiento",
+    "seleccion",
+    "respuesta-cerrada",
+    "completar",
+    "numerica",
+    "opcion-multiple",
+    "orden",
+    "respuesta-breve",
+    "texto-lacunar",
+    "verdadero-falso"
+  ],
+  "esquema": [
+    "respuesta-abierta"
+  ],
+  "estudio-caso": [
+    "respuesta-abierta"
+  ],
+  "ev-oral": [
+    "respuesta-abierta"
+  ],
+  "glosario": [
+    "respuesta-abierta"
+  ],
+  "investigacion": [
+    "respuesta-abierta",
+    "respuesta-cerrada",
+    "respuesta-breve"
+  ],
+  "rol": [
+    "respuesta-abierta"
+  ],
+  "mapa-conceptual": [
+    "respuesta-abierta"
+  ],
+  "monografia": [
+    "seleccion",
+    "respuesta-abierta",
+    "respuesta-cerrada",
+    "ensayo",
+    "respuesta-breve"
+  ],
+  "portafolio": [
+    "respuesta-abierta"
+  ],
+  "pruebas-clinicas": [
+    "respuesta-abierta",
+    "respuesta-breve"
+  ],
+  "practicas-lab": [
+    "respuesta-abierta",
+    "respuesta-breve"
+  ],
+  "prueba-mixta": [
+    "palabra-perdida",
+    "emparejamiento",
+    "ensayo",
+    "seleccion",
+    "respuesta-abierta",
+    "respuesta-cerrada",
+    "completar",
+    "numerica",
+    "opcion-multiple",
+    "orden",
+    "respuesta-breve",
+    "texto-lacunar",
+    "verdadero-falso"
+  ],
+  "recension-biblio": [
+    "seleccion",
+    "respuesta-abierta",
+    "respuesta-cerrada",
+    "ensayo",
+    "respuesta-breve"
+  ],
+  "problemas-abiertos": [
+    "respuesta-abierta",
+    "respuesta-cerrada",
+    "respuesta-breve"
+  ],
+  "resumen": [
+    "respuesta-abierta"
+  ],
+  "simulacion": [
+    "respuesta-abierta"
+  ],
+  "proyectos-tutelados": [
+    "respuesta-abierta",
+    "respuesta-cerrada",
+    "respuesta-breve"
+  ]
+}

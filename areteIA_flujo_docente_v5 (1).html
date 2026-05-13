@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AretéIA — Flujo módulo docente v5</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,sans-serif;background:#f5f4f0;color:#1a1a18;padding:24px}
+.wrap{max-width:820px;margin:0 auto}
+h1{font-size:17px;font-weight:500;margin-bottom:3px}
+.subtitle{font-size:12px;color:#999;margin-bottom:22px}
+
+/* progress */
+.progress{display:flex;align-items:center;gap:0;margin-bottom:20px;flex-wrap:nowrap}
+.dot{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:500;flex-shrink:0;cursor:pointer;border:1.5px solid transparent;transition:all .2s}
+.dot.done{background:#d4edda;color:#1e7850;border-color:#a3d9b8}
+.dot.active{background:#185fa5;color:#fff;border-color:#185fa5}
+.dot.pending{background:#ece9e3;color:#aaa;border-color:#d3d1c7}
+.line{flex:1;height:2px;background:#d3d1c7;margin:0 2px;min-width:4px}
+.line.done{background:#a3d9b8}
+
+/* card */
+.card{border:1px solid #d3d1c7;border-radius:12px;padding:20px;background:#fff}
+.ptag{display:inline-block;font-size:11px;font-weight:500;padding:2px 10px;border-radius:20px;margin-bottom:10px}
+.t-entrada{background:#e6f1fb;color:#185fa5}
+.t-ia{background:#faeeda;color:#854f0b}
+.t-bif{background:#f0ede8;color:#666;border:1px solid #d3d1c7}
+.t-salida{background:#f0ede8;color:#666;border:1px solid #d3d1c7}
+.stitle{font-size:15px;font-weight:500;margin-bottom:6px;color:#1a1a18}
+.sdesc{font-size:13px;color:#555;margin-bottom:14px;line-height:1.6}
+
+/* 3-col */
+.cols{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px}
+.cc{border-radius:8px;padding:10px 12px;font-size:12px;line-height:1.6}
+.cc strong{display:block;font-size:11px;font-weight:500;margin-bottom:5px;text-transform:uppercase;letter-spacing:.04em;opacity:.6}
+.c-in{background:#e6f1fb;color:#0c447c}
+.c-ia{background:#faeeda;color:#633806}
+.c-ag{background:#d4edda;color:#085041}
+
+/* nav */
+.nav{display:flex;justify-content:space-between;align-items:center;margin-top:16px}
+.nbtn{font-size:13px;font-weight:500;padding:7px 18px;border-radius:8px;border:1px solid #d3d1c7;background:#fff;color:#1a1a18;cursor:pointer}
+.nbtn:hover{opacity:.75}
+.nbtn:disabled{opacity:.3;cursor:default}
+.ncnt{font-size:12px;color:#aaa}
+
+/* pills */
+.pill{display:inline-block;margin:2px 3px 0 0;padding:2px 8px;border-radius:12px;font-size:11px}
+.pm{background:rgba(30,120,80,.13);color:#1e7850}
+.ps{background:rgba(0,0,0,.06);color:#555}
+
+.divider{border:none;border-top:0.5px solid #d3d1c7;margin:14px 0}
+.note{font-size:11px;color:#555;padding:8px 10px;border-radius:8px;background:#f0ede8;border-left:3px solid #d3d1c7;line-height:1.5;margin-bottom:12px}
+
+/* step 0 */
+.s0-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
+.s0-card{border-radius:8px;padding:16px;border:1.5px solid #d3d1c7;background:#fff;cursor:pointer;transition:all .2s}
+.s0-card:hover{border-color:#185fa5}
+.s0-card.sel{border-color:#185fa5;background:#e6f1fb}
+.s0-card strong{display:block;font-size:14px;font-weight:500;margin-bottom:4px;color:#1a1a18}
+.s0-card.sel strong{color:#185fa5}
+.s0-card span{font-size:12px;color:#555;line-height:1.5}
+.s0-card.sel span{color:#0c447c}
+
+/* step 1 fields */
+.sh{display:flex;align-items:center;gap:8px;margin:16px 0 8px;flex-wrap:wrap}
+.sbadge{font-size:11px;font-weight:500;padding:2px 8px;border-radius:20px}
+.bm{background:#faeeda;color:#854f0b}
+.bd{background:#e6f1fb;color:#185fa5}
+.bi{background:#fcebeb;color:#a32d2d}
+.slbl{font-size:13px;font-weight:500;color:#1a1a18}
+.snote{font-size:11px;color:#aaa;margin-left:auto}
+.fr{margin-bottom:10px}
+.flbl{font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.04em;color:#888;margin-bottom:4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.fb{border-radius:8px;padding:10px 12px;font-size:13px;color:#1a1a18}
+.fb.fc{border:0.5px solid #a3d9b8;background:#d4edda;color:#085041}
+.fb.fw{border:0.5px solid #fac775;background:#faeeda;color:#633806}
+.fb.fe{border:0.5px solid #d3d1c7;background:#fff;color:#1a1a18}
+.fa{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
+.fb-btn{font-size:11px;padding:3px 10px;border-radius:20px;border:0.5px solid #d3d1c7;background:#fff;color:#555;cursor:pointer}
+.fb-btn:hover{opacity:.7}
+.fb-btn.ok{border-color:#a3d9b8;color:#1e7850;background:#d4edda}
+.fb-btn.rej{border-color:#f09595;color:#a32d2d}
+.fb-btn.ed{border-color:#85b7eb;color:#185fa5}
+.fb-btn.add{border-color:#85b7eb;color:#185fa5;background:#e6f1fb}
+.sb-tag{font-size:10px;font-weight:500;padding:2px 7px;border-radius:10px}
+.sb-ok{background:#d4edda;color:#1e7850}
+.sb-warn{background:#faeeda;color:#854f0b}
+.sb-ed{background:#e6f1fb;color:#185fa5}
+.sb-req{background:#f0ede8;color:#888}
+.cnote{font-size:11px;color:#854f0b;margin-top:3px}
+.tag-m{display:inline-flex;font-size:10px;padding:1px 6px;border-radius:8px;background:#faeeda;color:#854f0b;font-weight:500}
+.ea{width:100%;border:0.5px solid #85b7eb;border-radius:8px;padding:8px 10px;font-size:13px;font-family:system-ui,sans-serif;color:#1a1a18;background:#fff;resize:vertical;min-height:52px;margin-top:4px;outline:none}
+.ea:focus{border-color:#185fa5}
+
+/* inst frame */
+.inst{border:1px solid #f09595;border-radius:8px;padding:12px 14px;background:#fcebeb;margin-bottom:10px}
+.inst-lbl{font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.04em;color:#a32d2d;margin-bottom:8px}
+.inst-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.inst-item{display:flex;flex-direction:column;gap:3px}
+.inst-item label{font-size:11px;color:#a32d2d;opacity:.8}
+.sel-r{width:100%;border:0.5px solid #f09595;border-radius:8px;padding:7px 8px;font-size:12px;font-family:system-ui,sans-serif;background:#fff;color:#1a1a18;outline:none}
+.sel2{width:100%;border:0.5px solid #d3d1c7;border-radius:8px;padding:8px 10px;font-size:13px;font-family:system-ui,sans-serif;background:#fff;color:#1a1a18;outline:none}
+.bbar{display:flex;justify-content:space-between;align-items:center;margin-top:16px;padding-top:12px;border-top:0.5px solid #d3d1c7}
+.ptxt{font-size:12px;color:#aaa}
+.bcont{font-size:13px;font-weight:500;padding:7px 18px;border-radius:8px;border:0.5px solid #185fa5;background:#e6f1fb;color:#185fa5;cursor:pointer}
+
+/* bifurcation */
+.bif-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+.bif-card{border-radius:8px;padding:12px 14px;font-size:12px;line-height:1.5;border:1px solid #d3d1c7;background:#f8f7f4}
+.bif-card strong{display:block;font-size:13px;font-weight:500;margin-bottom:4px;color:#1a1a18}
+.bif-card.pa{border-color:#85b7eb;background:#e6f1fb}
+.bif-card.pa strong{color:#185fa5}
+.bif-card.pa{color:#0c447c}
+.bif-card.pb{border-color:#a3d9b8;background:#d4edda}
+.bif-card.pb strong{color:#1e7850}
+.bif-card.pb{color:#085041}
+
+/* dialog */
+.dim{margin-bottom:16px}
+.dlbl{font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.05em;color:#aaa;margin-bottom:4px}
+.dq{font-size:13px;font-weight:500;color:#1a1a18;margin-bottom:4px}
+.dref{font-size:11px;color:#aaa;margin-bottom:8px;font-style:italic}
+.opts{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
+.opt{font-size:12px;padding:5px 11px;border-radius:20px;border:1px solid #d3d1c7;background:#f8f7f4;color:#555;line-height:1.3}
+.opt.main{border-color:#85b7eb;color:#185fa5;background:#e6f1fb}
+.consec{font-size:11px;color:#aaa;padding-left:6px;border-left:2px solid #d3d1c7;line-height:1.5;margin-top:2px}
+
+/* verb box */
+.vbox{border-radius:8px;padding:10px 12px;background:#e6f1fb;border:0.5px solid #85b7eb;margin-top:8px;margin-bottom:4px}
+.vbox-lbl{font-size:11px;font-weight:500;color:#185fa5;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em}
+.vpills{display:flex;flex-wrap:wrap;gap:5px}
+.vpill{font-size:11px;padding:3px 9px;border-radius:12px;background:#fff;border:0.5px solid #85b7eb;color:#185fa5}
+
+/* obj template */
+.otpl{font-size:13px;font-weight:500;color:#185fa5;margin-bottom:6px;padding:8px 10px;border-radius:8px;background:#e6f1fb;border:1.5px solid #85b7eb}
+.otpl em{font-style:normal;opacity:.6}
+.ohint{font-size:11px;color:#aaa;margin-top:4px}
+
+/* path-a note */
+.pa-note{border-radius:8px;padding:10px 12px;background:#faeeda;border:0.5px solid #fac775;color:#633806;font-size:12px;line-height:1.5;margin-top:14px}
+.pa-note strong{display:block;font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px;color:#854f0b}
+
+/* suggestions */
+.sug-grid{display:flex;flex-direction:column;gap:10px;margin-bottom:14px}
+.sug{border-radius:8px;padding:12px 14px;font-size:12px;line-height:1.5;border:1px solid #d3d1c7;background:#f8f7f4}
+.sug.rec{border-color:#85b7eb;background:#e6f1fb}
+.sug-hd{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+.sug-name{font-size:13px;font-weight:500;color:#1a1a18}
+.sug.rec .sug-name{color:#185fa5}
+.sug-badge{font-size:10px;padding:2px 7px;border-radius:10px;background:#185fa5;color:#fff;font-weight:500}
+.sug-why{color:#555;margin-bottom:4px}
+.sug.rec .sug-why{color:#0c447c}
+.sug-lim{font-size:11px;color:#aaa}
+
+/* calificacion */
+.crit-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px}
+.crit{border-radius:8px;padding:8px 10px;font-size:12px;line-height:1.5;border:0.5px solid #d3d1c7;background:#fff}
+.crit strong{display:block;font-size:12px;font-weight:500;margin-bottom:3px}
+.crit.c1 strong{color:#a32d2d}
+.crit.c2 strong{color:#854f0b}
+.crit.c3 strong{color:#1e7850}
+.iphases{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.iph{border-radius:8px;padding:10px 12px;font-size:12px;line-height:1.6;border:0.5px solid #d3d1c7}
+.iph.ia{background:#faeeda;border-color:#fac775;color:#633806}
+.iph.doc{background:#d4edda;border-color:#a3d9b8;color:#085041}
+.iph strong{display:block;font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.04em;opacity:.7;margin-bottom:4px}
+
+@media(max-width:580px){
+  .cols,.s0-grid,.bif-grid,.inst-grid,.crit-grid,.iphases{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>AretéIA — Flujo de interacción del módulo docente</h1>
+  <p class="subtitle">Universidad de Buenos Aires · CITEP · Versión 5</p>
+  <div class="progress" id="prog"></div>
+  <div class="card" id="card"></div>
+</div>
+
+<script>
+var hasMoodle=true;
+var mS={
+  asignatura:{ok:true,v:'Didáctica General · 3° año · Profesorado en Cs. de la Educación'},
+  insercion:{ok:true,v:'Materia troncal obligatoria. Correlativa con Pedagogía I y II.'},
+  programa:{ok:false,v:'Unidad 1: Didáctica y currículum · Unidad 2: Planificación · Unidad 3: Evaluación · Unidad 4: Enseñanza y diversidad'},
+  materiales:{ok:false,v:'Zabala (1995) · Coll et al. (1993) · 3 guías de TP · 2 videos de clase'},
+  recorrido:{ok:false,v:'Foros (3) · Análisis de casos grupales (2) · TP integrador (18/24 entregaron)'}
+};
+
+var verbos={
+  factual:['identificar','nombrar','reconocer','listar','definir','clasificar'],
+  conceptual:['explicar','relacionar','comparar','fundamentar','interpretar','distinguir'],
+  procedimental:['aplicar','ejecutar','resolver','producir','diseñar','demostrar'],
+  actitudinal:['argumentar','posicionarse','evaluar','justificar','valorar','defender']
+};
+
+var steps=[
+  {n:'0',tag:'t-entrada',tl:'Paso 0 — Punto de entrada',title:'¿Tenés tu curso cargado en Moodle?',desc:'Según tu respuesta, AretéIA importa automáticamente la información disponible o te pide que la cargues manualmente. El proceso de diseño es el mismo en ambos casos.',type:'step0'},
+  {n:'1',tag:'t-entrada',tl:'Paso 1 — Contexto objetivo',title:'Contexto pedagógico de la asignatura',desc:'Este paso recoge información objetiva sobre la asignatura y las condiciones institucionales de calificación. La reflexión sobre el objetivo y la función de la evaluación se trabaja en el paso 3.',type:'step1'},
+  {n:'2',tag:'t-bif',tl:'Paso 2 — Bifurcación',title:'¿Ya tenés en mente un instrumento de evaluación?',desc:'El sistema ofrece dos caminos. El diálogo del paso 3 se adapta según lo que respondas acá.',type:'bif'},
+  {n:'3',tag:'t-ia',tl:'Paso 3 — Diálogo con la IA',title:'La IA guía al docente para clarificar el objetivo de evaluación',desc:'La IA trabaja desde cero con el docente en cuatro dimensiones. El orden importa: primero el tipo de contenido, porque de ahí emergen los verbos pertinentes para formular el objetivo.',type:'dialog'},
+  {n:'4',tag:'t-ia',tl:'Paso 4 — Sugerencia de la IA',title:'La IA propone una batería de instrumentos con justificación pedagógica',desc:'Con el objetivo clarificado, la IA sugiere 2–3 instrumentos posibles. Si el docente ya eligió uno en el paso 2, la IA lo valida o problematiza a la luz del objetivo que emergió en el diálogo.',type:'sug'},
+  {n:'5',tag:'t-ia',tl:'Paso 5 — Diseño del instrumento',title:'La IA construye el instrumento junto con el docente',desc:'El docente elige el instrumento y la IA lo construye: genera consignas, pide validación, señala sesgos, incorpora orientaciones para el estudiante.',type:'cols',
+    ent:'Instrumento elegido + objetivo clarificado en el paso 3',
+    ia:'Genera consignas ancladas en tipo de contenido y nivel cognitivo · Señala posibles sesgos · Incorpora orientaciones y recursos del docente · Justifica cada decisión pedagógica',
+    ag:[{t:'Aceptar consignas propuestas',m:1},{t:'Editar directamente',m:1},{t:'Pedir variantes de una consigna'},{t:'Pedir justificación pedagógica'},{t:'Agregar orientaciones al estudiante'},{t:'Volver a una versión anterior'}]},
+  {n:'6',tag:'t-ia',tl:'Paso 6 — Instrumento de calificación',title:'La IA propone criterios de calificación y el docente los ajusta',desc:'Con el instrumento aprobado, la IA construye el instrumento de calificación anclándolo en las consignas, el tipo de contenido, el nivel cognitivo y los criterios institucionales del paso 1. Proceso iterativo igual al paso 5.',type:'calif'},
+  {n:'7',tag:'t-salida',tl:'Paso 7 — Resultado final',title:'El instrumento queda guardado, trazable y listo para usar',desc:'El proceso concluye con instrumento de evaluación y de calificación pedagógicamente coherentes, con su proceso de construcción registrado y disponible para docente y estudiantes.',type:'cols',
+    ent:'Validación final del docente',
+    ia:'Genera versión final · Registra proceso completo para trazabilidad · Prepara vista metacognitiva para el estudiante',
+    ag:[{t:'Guardar en AretéIA y asignar a estudiantes',m:1},{t:'Exportar como PDF o Word'},{t:'Publicar en Moodle directamente'},{t:'Guardar como borrador'},{t:'Compartir criterios con estudiantes antes de la evaluación'}]}
+];
+
+var cur=0;
+
+function uc(){
+  var n=Object.values(mS).filter(function(s){return s.ok;}).length;
+  var el=document.getElementById('ptxt');
+  if(el) el.textContent=n+' de 5 campos confirmados';
+}
+
+function actsHtml(id,warn){
+  if(warn){
+    return '<button class="fb-btn ok" onclick="cF(\''+id+'\')">Confirmar</button><button class="fb-btn ed" onclick="eF(\''+id+'\')">Editar</button><button class="fb-btn rej" onclick="rF(\''+id+'\')">Rechazar y escribir desde cero</button>';
+  }
+  return '<button class="fb-btn ed" onclick="eF(\''+id+'\')">Editar</button><button class="fb-btn rej" onclick="rF(\''+id+'\')">Rechazar y escribir desde cero</button>';
+}
+
+function cF(id){
+  mS[id].ok=true;
+  document.getElementById('fb-'+id).className='fb fc';
+  var s=document.getElementById('fs-'+id); s.className='sb-tag sb-ok'; s.textContent='Confirmado';
+  var cn=document.getElementById('cn-'+id); if(cn) cn.style.display='none';
+  document.getElementById('fa-'+id).innerHTML=actsHtml(id,false);
+  uc();
+}
+function rF(id){
+  mS[id].ok=false;
+  var b=document.getElementById('fb-'+id); b.className='fb fe';
+  b.innerHTML='<textarea class="ea" placeholder="Escribí desde cero…" oninput="mS[\''+id+'\'].v=this.value" style="min-height:52px;width:100%;margin:0"></textarea>';
+  var s=document.getElementById('fs-'+id); s.className='sb-tag sb-ed'; s.textContent='Editando';
+  var cn=document.getElementById('cn-'+id); if(cn) cn.style.display='none';
+  document.getElementById('fa-'+id).innerHTML='<button class="fb-btn ok" onclick="svF(\''+id+'\')">Guardar y confirmar</button>';
+  uc();
+}
+function eF(id){
+  mS[id].ok=false;
+  var b=document.getElementById('fb-'+id); b.className='fb fe';
+  b.innerHTML='<textarea class="ea" oninput="mS[\''+id+'\'].v=this.value" style="min-height:52px;width:100%;margin:0">'+mS[id].v+'</textarea>';
+  var s=document.getElementById('fs-'+id); s.className='sb-tag sb-ed'; s.textContent='Editando';
+  var cn=document.getElementById('cn-'+id); if(cn) cn.style.display='none';
+  document.getElementById('fa-'+id).innerHTML='<button class="fb-btn ok" onclick="svF(\''+id+'\')">Guardar y confirmar</button><button class="fb-btn rej" onclick="rF(\''+id+'\')">Borrar todo y escribir desde cero</button>';
+  uc();
+}
+function svF(id){
+  var ta=document.getElementById('fb-'+id).querySelector('textarea');
+  if(ta) mS[id].v=ta.value;
+  mS[id].ok=true;
+  var b=document.getElementById('fb-'+id); b.className='fb fc';
+  b.innerHTML='<span>'+mS[id].v+'</span>';
+  var s=document.getElementById('fs-'+id); s.className='sb-tag sb-ok'; s.textContent='Confirmado';
+  document.getElementById('fa-'+id).innerHTML=actsHtml(id,false);
+  uc();
+}
+
+function mField(id,label,warn,cnote){
+  var st=mS[id];
+  var cls=warn?'fb fw':'fb fc';
+  var sbc=warn?'sb-tag sb-warn':'sb-tag sb-ok';
+  var sbt=warn?'Verificar':'Confirmado';
+  var origin=hasMoodle?'<span class="tag-m">Moodle</span>':'';
+  return '<div class="fr" id="f-'+id+'">'+
+    '<div class="flbl">'+label+' '+origin+'<span class="'+sbc+'" id="fs-'+id+'">'+sbt+'</span></div>'+
+    '<div class="'+cls+'" id="fb-'+id+'"><span>'+st.v+'</span></div>'+
+    (cnote?'<div class="cnote" id="cn-'+id+'">'+cnote+'</div>':'')+
+    '<div class="fa" id="fa-'+id+'">'+actsHtml(id,warn)+'</div>'+
+    '</div>';
+}
+
+function setMoodle(v){
+  hasMoodle=v;
+  var cards=document.querySelectorAll('.s0-card');
+  cards[0].className='s0-card'+(v?' sel':'');
+  cards[1].className='s0-card'+(!v?' sel':'');
+}
+
+function rStep0(){
+  return '<div class="s0-grid">'+
+    '<div class="s0-card'+(hasMoodle?' sel':'')+'" onclick="setMoodle(true)"><strong>Sí, tengo curso en Moodle</strong><span>AretéIA importa automáticamente los datos disponibles. Solo necesitás verificar y completar lo que falte.</span></div>'+
+    '<div class="s0-card'+(!hasMoodle?' sel':'')+'" onclick="setMoodle(false)"><strong>No, no uso Moodle</strong><span>AretéIA te presenta los mismos campos para que los cargues manualmente.</span></div>'+
+    '</div>'+
+    '<div class="note">En ambos casos el proceso de diseño es exactamente el mismo. La diferencia es solo el origen de los datos en el paso 1.</div>'+
+    '<div class="cols">'+
+    '<div class="cc c-in"><strong>Entra</strong>Decisión del docente sobre si usa Moodle</div>'+
+    '<div class="cc c-ia"><strong>La IA</strong>Configura el paso 1 con importación automática o formulario vacío según la respuesta</div>'+
+    '<div class="cc c-ag"><strong>El docente puede</strong><span class="pill pm">Confirmar que usa Moodle</span><span class="pill pm">Confirmar que no usa Moodle</span></div>'+
+    '</div>';
+}
+
+function rStep1(){
+  var hc=hasMoodle?
+    '<div class="sh"><span class="sbadge bm">Importado de Moodle</span><span class="slbl">Alta confiabilidad</span><span class="snote">Confirmá o editá</span></div>':
+    '<div class="sh"><span class="sbadge bd">Carga manual</span><span class="slbl">Completá los campos</span></div>';
+  var mc=hasMoodle?
+    '<div class="sh"><span class="sbadge bm">Importado de Moodle</span><span class="slbl">Conviene verificar</span><span class="snote">Puede no reflejar lo ocurrido en clase</span></div>':
+    '<div class="sh"><span class="sbadge bd">Carga manual</span><span class="slbl">Completá los campos</span></div>';
+  return hc+
+    mField('asignatura','Asignatura',false,'')+
+    mField('insercion','Inserción en el plan de estudios',false,'')+
+    mField('programa','Programa de la materia',hasMoodle,hasMoodle?'Verificá que el programa cargado esté actualizado y sea el vigente para este cursado.':'')+
+    mc+
+    mField('materiales','Materiales de estudio',hasMoodle,hasMoodle?'Moodle lista los recursos publicados. Confirmá cuáles se trabajaron efectivamente.':'')+
+    '<div class="fr">'+
+      '<div class="flbl">Materiales adicionales <span class="sb-tag" style="background:#e6f1fb;color:#185fa5">Nuevo</span></div>'+
+      '<div class="fb fe"><textarea class="ea" placeholder="Agregá bibliografía, recursos o materiales que no estén en Moodle…" style="min-height:48px;margin:0"></textarea></div>'+
+      '<div class="fa"><button class="fb-btn add">+ Agregar material</button></div>'+
+    '</div>'+
+    mField('recorrido','Recorrido de aprendizaje previo',hasMoodle,hasMoodle?'Moodle registra actividades publicadas, no las que ocurrieron realmente. ¿Refleja lo que trabajaron?':'')+
+    '<div class="divider"></div>'+
+    '<div class="sh"><span class="sbadge bi">Condiciones institucionales</span><span class="slbl">Marco de calificación</span><span class="snote">Condiciona el paso 6</span></div>'+
+    '<div class="inst">'+
+      '<div class="inst-lbl">Criterios institucionales de calificación</div>'+
+      '<div class="inst-grid">'+
+        '<div class="inst-item"><label>Escala de calificación</label><select class="sel-r"><option>1 a 10 (aprueba con 4)</option><option>1 a 10 (aprueba con 6)</option><option>A / B / C / D</option><option>Aprobado / Desaprobado</option><option>Otra (especificar)</option></select></div>'+
+        '<div class="inst-item"><label>Tipo de instancia</label><select class="sel-r"><option>Parcial (con recuperatorio)</option><option>Final</option><option>Trabajo práctico</option><option>Evaluación de proceso</option></select></div>'+
+        '<div class="inst-item"><label>Ponderación sobre la nota final</label><select class="sel-r"><option>30%</option><option>40%</option><option>50%</option><option>Única instancia (100%)</option><option>No pondera</option></select></div>'+
+        '<div class="inst-item"><label>Criterios mínimos de acreditación</label><select class="sel-r"><option>Sí, definidos en el plan</option><option>Sí, los defino como docente</option><option>No hay criterios mínimos formales</option></select></div>'+
+      '</div>'+
+    '</div>'+
+    '<div class="bbar"><span class="ptxt" id="ptxt">2 de 5 campos confirmados</span><button class="bcont">Continuar al paso 2 →</button></div>';
+}
+
+function rBif(){
+  return '<div class="bif-grid">'+
+    '<div class="bif-card pa"><strong>Camino A — Ya sé qué instrumento quiero</strong>El docente indica el instrumento que tiene en mente. En el paso 3, al final del diálogo, la IA evalúa si ese instrumento es coherente con el objetivo clarificado y lo señala con justificación pedagógica.</div>'+
+    '<div class="bif-card pb"><strong>Camino B — No lo tengo decidido</strong>El docente avanza sin elegir. El paso 3 trabaja el objetivo desde cero y la IA sugiere instrumentos en el paso 4 a partir de lo que emerja.</div>'+
+    '</div>'+
+    '<div class="note">En el Camino A, la IA no descarta el instrumento elegido automáticamente — lo trabaja en el diálogo. Si al final hay inconsistencia con el objetivo, la IA lo señala y el docente decide si mantiene su elección o la reconsidera.</div>'+
+    '<div class="cols">'+
+    '<div class="cc c-in"><strong>Entra</strong>Decisión del docente + instrumento en mente (si lo hay)</div>'+
+    '<div class="cc c-ia"><strong>La IA</strong>Registra la elección. Si hay instrumento previo, lo lleva al paso 3 para validarlo contra el objetivo que emerja.</div>'+
+    '<div class="cc c-ag"><strong>El docente puede</strong><span class="pill pm">Indicar el instrumento que tiene en mente</span><span class="pill pm">Avanzar sin elegir</span></div>'+
+    '</div>';
+}
+
+var dims=[
+  {lbl:'Dimensión 1 — Tipo de contenido',
+   q:'¿Qué tipo de contenido es el foco principal de esta evaluación?',
+   ref:'Zabala (1995) — contenidos conceptuales, procedimentales y actitudinales',
+   note:'Esta elección determina qué verbos son pertinentes para formular el objetivo — por eso se pregunta primero.',
+   opts:[
+     {t:'Datos fácticos (información puntual, fechas, definiciones)',k:'factual',c:'→ Ítems cerrados, reproducción exacta'},
+     {t:'Conceptos y principios (comprensión, relaciones entre ideas)',k:'conceptual',m:1,c:'→ Desarrollo o aplicación'},
+     {t:'Procedimientos y habilidades (secuencias, técnicas, ejecución)',k:'procedimental',c:'→ Situación de ejecución, no descripción'},
+     {t:'Valoraciones y actitudes (posicionamiento, argumentación)',k:'actitudinal',c:'→ Instrumentos que capturen razonamiento'}
+   ],
+   showVerbs:true},
+  {lbl:'Dimensión 2 — Objetivo de evaluación',
+   q:'Formulá el objetivo: ¿qué querés saber si los estudiantes pueden hacer con ese contenido?',
+   ref:'Perrenoud (2008) — el objetivo como desempeño esperado, no como tema',
+   note:'Si la formulación no contiene un verbo de desempeño observable, la IA lo señala antes de avanzar.',
+   template:true,
+   opts:[
+     {t:'Ej: …explicar con sus palabras la relación entre X e Y',m:1,c:'→ Verbo de comprensión'},
+     {t:'Ej: …aplicar el procedimiento Z en una situación nueva',m:1,c:'→ Verbo de aplicación'},
+     {t:'Ej: …argumentar a favor o en contra de X con evidencia',c:'→ Verbo de evaluación'},
+     {t:'Ej: …identificar los elementos de W en un caso dado',c:'→ Verbo de recuerdo'}
+   ]},
+  {lbl:'Dimensión 3 — Función de la evaluación',
+   q:'¿Qué decisión vas a tomar con los resultados de esta evaluación?',
+   ref:'Coll et al. (1993) — evaluación diagnóstica, formativa y sumativa',
+   note:'Condiciona el instrumento de calificación del paso 6 y el tipo de feedback al estudiante.',
+   opts:[
+     {t:'Diagnosticar dónde están los estudiantes al inicio',m:1,c:'→ Instrumento exploratorio, sin calificación acreditante'},
+     {t:'Regular el proceso durante el cursado',m:1,c:'→ Instrumento formativo con feedback descriptivo'},
+     {t:'Acreditar aprendizajes al final',c:'→ Instrumento sumativo con criterios públicos'},
+     {t:'Promover la autorreflexión del estudiante',c:'→ Autoevaluación o portafolio metacognitivo'}
+   ]},
+  {lbl:'Dimensión 4 — Modalidad y condiciones',
+   q:'¿En qué contexto concreto se va a tomar esta evaluación?',
+   ref:'Zabala (1995) — la evaluación situada en la secuencia didáctica',
+   note:'Permite descartar instrumentos no factibles y condiciona el formato del instrumento.',
+   opts:[
+     {t:'Presencial con tiempo acotado (ej. 2 horas en el aula)',c:'→ Descarta portafolios o proyectos extendidos'},
+     {t:'Virtual sincrónica',m:1,c:'→ Condiciona formato y posibilidad de observación'},
+     {t:'Virtual asincrónica (entrega diferida)',c:'→ Habilita producción propia y entregas con tiempo'},
+     {t:'Instancia de proceso (durante la cursada, no al final)',m:1,c:'→ Prioriza función formativa'}
+   ]}
+];
+
+function rDialog(){
+  var html=dims.map(function(d,i){
+    var extra='';
+    if(d.showVerbs){
+      extra='<div class="vbox"><div class="vbox-lbl">Verbos sugeridos — se actualizan según el tipo elegido</div><div class="vpills">'+
+        verbos.conceptual.map(function(v){return '<span class="vpill">'+v+'</span>';}).join('')+
+        '</div></div>';
+    }
+    if(d.template){
+      extra='<div class="otpl">«Quiero saber si los estudiantes pueden <em>[verbo]</em> <em>[contenido]</em> <em>[en qué condiciones]</em>»</div>'+
+        '<div class="vbox"><div class="vbox-lbl">Verbos disponibles según el tipo de contenido elegido en la dimensión 1</div>'+
+        '<div class="vpills">'+verbos.conceptual.map(function(v){return '<span class="vpill">'+v+'</span>';}).join('')+'</div></div>'+
+        '<div class="ohint">Si la formulación no contiene un verbo de desempeño observable, la IA lo señala antes de avanzar.</div>';
+    }
+    return '<div class="dim">'+
+      '<div class="dlbl">'+d.lbl+'</div>'+
+      '<div class="dq">'+d.q+'</div>'+
+      '<div class="dref">'+d.ref+'</div>'+
+      extra+
+      '<div class="opts">'+d.opts.map(function(o){return '<span class="opt'+(o.m?' main':'')+'" title="'+o.c+'">'+o.t+'</span>';}).join('')+'</div>'+
+      '<div class="consec">'+d.note+'</div>'+
+      (i<dims.length-1?'<hr class="divider">':'')+
+      '</div>';
+  }).join('');
+  html+='<div class="pa-note"><strong>Si el docente vino por el Camino A</strong>Al cierre del diálogo, la IA presenta su evaluación del instrumento elegido previamente: confirma si es coherente con el objetivo clarificado, señala posibles tensiones y explica por qué. El docente decide si lo mantiene, lo ajusta o lo cambia antes de avanzar al paso 4.</div>';
+  return html;
+}
+
+function rSug(){
+  return '<div class="sug-grid">'+
+    '<div class="sug rec"><div class="sug-hd"><span class="sug-name">Examen escrito con ítems de desarrollo</span><span class="sug-badge">Recomendado</span></div><div class="sug-why">Coherente con el objetivo de evaluar comprensión de conceptos en instancia presencial acotada. Permite capturar razonamiento, no solo reproducción.</div><div class="sug-lim">Requiere criterios de corrección explícitos para evitar arbitrariedad.</div></div>'+
+    '<div class="sug"><div class="sug-hd"><span class="sug-name">Portafolio de producciones</span></div><div class="sug-why">Adecuado si la función es formativa y el objetivo incluye autorreflexión. Permite evidenciar proceso, no solo resultado.</div><div class="sug-lim">Requiere tiempo extendido. No viable en instancias sumativas breves.</div></div>'+
+    '<div class="sug"><div class="sug-hd"><span class="sug-name">Situación problemática con consigna abierta</span></div><div class="sug-why">Pertinente si el nivel cognitivo esperado es aplicar o analizar. Exige movilizar conocimiento en contexto nuevo.</div><div class="sug-lim">Requiere criterios de evaluación muy elaborados.</div></div>'+
+    '</div>'+
+    '<div class="cols">'+
+    '<div class="cc c-in"><strong>Entra</strong>Objetivo clarificado: tipo de contenido + desempeño esperado + función + modalidad + criterios institucionales</div>'+
+    '<div class="cc c-ia"><strong>La IA</strong>Justifica cada opción anclada en el objetivo · Retoma instrumento previo si lo hay (Camino A) · Explica qué gana y qué limita cada opción</div>'+
+    '<div class="cc c-ag"><strong>El docente puede</strong><span class="pill pm">Elegir el instrumento recomendado</span><span class="pill pm">Elegir otra opción</span><span class="pill ps">Pedir otra sugerencia</span><span class="pill ps">Combinar instrumentos</span><span class="pill ps">Volver al paso 3 y cambiar una dimensión</span></div>'+
+    '</div>';
+}
+
+function rCalif(){
+  return '<div class="note" style="margin-bottom:12px">La IA no genera la rúbrica de golpe. Primero presenta criterios anclados en las consignas ya aprobadas; el docente los revisa y ajusta; la IA reformula. El ciclo se repite hasta que el docente valida — igual que en el paso 5.</div>'+
+    '<div class="dlbl" style="margin-bottom:8px">Tipos de criterios que la IA construye</div>'+
+    '<div class="crit-grid">'+
+      '<div class="crit c1"><strong>Criterios institucionales</strong>Del paso 1 — escala, ponderación, mínimos de acreditación. Marco no negociable.</div>'+
+      '<div class="crit c2"><strong>Criterios de contenido</strong>Del tipo de contenido y nivel cognitivo del paso 3. Ej: "argumenta con evidencia" si el nivel era evaluar.</div>'+
+      '<div class="crit c3"><strong>Criterios de consigna</strong>Anclados en cada consigna aprobada en el paso 5. "Este criterio surge de la consigna 3, que pedía…"</div>'+
+    '</div>'+
+    '<div class="iphases">'+
+      '<div class="iph ia"><strong>La IA propone</strong>Instrumento coherente con consignas, tipo de contenido, nivel cognitivo y marco institucional · Criterios observables y graduados · Rúbrica analítica, escala de valor o matriz argumentativa según el caso</div>'+
+      '<div class="iph doc"><strong>El docente decide</strong><span class="pill pm" style="margin:0 0 3px">Aceptar criterios propuestos</span><span class="pill pm" style="margin:0 0 3px">Editar criterios directamente</span><span class="pill ps" style="margin:0 0 3px">Pedir variantes de un criterio</span><span class="pill ps" style="margin:0 0 3px">Pedir justificación pedagógica</span><span class="pill ps" style="margin:0 0 3px">Ajustar niveles de la rúbrica</span><span class="pill ps" style="margin:0 0 3px">Configurar corrección automática</span><span class="pill ps">Volver a una versión anterior</span></div>'+
+    '</div>'+
+    '<div class="cols">'+
+    '<div class="cc c-in"><strong>Entra</strong>Instrumento aprobado (paso 5) + criterios institucionales (paso 1) + tipo de contenido y nivel cognitivo (paso 3)</div>'+
+    '<div class="cc c-ia"><strong>La IA</strong>Propone criterios anclados en consignas concretas · Explica de dónde surge cada criterio · Advierte si un ajuste rompe coherencia con el objetivo</div>'+
+    '<div class="cc c-ag"><strong>El docente puede</strong><span class="pill pm">Aceptar la propuesta completa</span><span class="pill pm">Iterar criterio por criterio</span><span class="pill ps">Omitir y retomar después</span></div>'+
+    '</div>';
+}
+
+function rCols(s){
+  return '<div class="cols">'+
+    '<div class="cc c-in"><strong>Entra</strong>'+s.ent+'</div>'+
+    '<div class="cc c-ia"><strong>La IA</strong>'+s.ia+'</div>'+
+    '<div class="cc c-ag"><strong>El docente puede</strong>'+s.ag.map(function(o){return '<span class="pill '+(o.m?'pm':'ps')+'">'+o.t+'</span>';}).join('')+'</div>'+
+    '</div>';
+}
+
+function render(){
+  var s=steps[cur];
+  document.getElementById('prog').innerHTML=steps.map(function(st,i){
+    var cls=i<cur?'done':i===cur?'active':'pending';
+    var lc=i<cur?' done':'';
+    return (i>0?'<div class="line'+lc+'"></div>':'')+
+      '<div class="dot '+cls+'" onclick="go('+i+')" title="Paso '+st.n+': '+st.title+'">'+st.n+'</div>';
+  }).join('');
+
+  var body='';
+  if(s.type==='step0') body=rStep0();
+  else if(s.type==='step1') body=rStep1();
+  else if(s.type==='bif') body=rBif();
+  else if(s.type==='dialog') body=rDialog();
+  else if(s.type==='sug') body=rSug();
+  else if(s.type==='calif') body=rCalif();
+  else body=rCols(s);
+
+  document.getElementById('card').innerHTML=
+    '<span class="ptag '+s.tag+'">'+s.tl+'</span>'+
+    '<p class="stitle">'+s.title+'</p>'+
+    '<p class="sdesc">'+s.desc+'</p>'+
+    body+
+    '<div class="nav">'+
+      '<button class="nbtn" onclick="go('+(cur-1)+')" '+(cur===0?'disabled':'')+'>← Anterior</button>'+
+      '<span class="ncnt">Paso '+cur+' de '+(steps.length-1)+'</span>'+
+      '<button class="nbtn" onclick="go('+(cur+1)+')" '+(cur===steps.length-1?'disabled':'')+'>Siguiente →</button>'+
+    '</div>';
+
+  if(s.type==='step1') uc();
+}
+
+function go(i){if(i<0||i>=steps.length)return; cur=i; render();}
+render();
+</script>
+</body>
+</html>
